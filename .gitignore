@@ -1,6 +1,6 @@
 # data
 data/*
-!data/.gitkeep
+!data/README.md
 *.xlsx
 
 # venv
