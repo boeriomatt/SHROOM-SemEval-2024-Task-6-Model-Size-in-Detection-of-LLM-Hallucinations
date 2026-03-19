@@ -3,6 +3,9 @@ data/*
 !data/README.md
 *.xlsx
 
+# pdf output
+*.html
+
 # venv
 .venv/
 
