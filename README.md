@@ -63,6 +63,7 @@ Generated files are written under:
 - outputs/metadata/
 
 Run python summarize_metadata.py to see table of latest model results
+Run python plot_metadata_results.py to generate plots of model data
 
 ## Current Progress and Notes
 Currently implemented:
