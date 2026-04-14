@@ -62,6 +62,8 @@ Generated files are written under:
 - outputs/scores/
 - outputs/metadata/
 
+Run python summarize_metadata.py to see table of latest model results
+
 ## Current Progress and Notes
 Currently implemented:
 - FLAN-T5 prompt-based judge
