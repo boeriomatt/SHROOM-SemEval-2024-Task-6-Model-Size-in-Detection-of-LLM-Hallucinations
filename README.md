@@ -10,6 +10,7 @@ The project also records computational cost measurements for each model run, inc
 - mean inference latency per example
 
 ## Project structure (for model experiements)
+```text
 model_experiments/
 ├── data/                     # Local SHROOM datasets (ignored by git)
 │   ├── SHROOM_dev-v2/
@@ -27,6 +28,7 @@ model_experiments/
 ├── run_experiment.py         # Main experiment runner
 ├── requirements.txt
 └── README.md
+```
 
 ## Setup and Execution
 Create and activate a virtual environment, then install dependencies:
