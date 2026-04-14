@@ -1,4 +1,5 @@
 import argparse
+from html import parser
 import json
 from pathlib import Path
 import random
@@ -69,6 +70,17 @@ def parse_args():
         "--notes",
         default="",
         help="Optional free-text notes stored in metadata."
+    )
+    parser.add_argument(
+        "--warmup-path",
+        default="data/SHROOM_trial-v1.1/trial-v1.json",
+        help="Optional dataset used only for warmup before latency measurement."
+    )
+    parser.add_argument(
+        "--warmup-n",
+        type=int,
+        default=10,
+        help="Number of warmup examples to run before measured evaluation. Set to 0 to disable warmup."
     )
     return parser.parse_args()
 
@@ -198,6 +210,8 @@ def save_metadata(
     mean_latency_seconds: float | None,
     total_runtime_seconds: float | None,
     parameter_count: int | None,
+    warmup_path: Path | None,
+    warmup_examples_used: int,
     prompt_version: str = "support_prompt_v1",
     notes: str = "",
 ) -> None:
@@ -220,6 +234,10 @@ def save_metadata(
         "prompt_version": prompt_version,
         "notes": notes,
         "scores": score_contents,
+        "warmup": {
+            "warmup_path": str(warmup_path) if warmup_path is not None else None,
+            "warmup_examples_used": warmup_examples_used,
+        },
         "computational_cost": {
             "parameter_count": parameter_count,
             "mean_inference_latency_seconds_per_example": mean_latency_seconds,
@@ -231,6 +249,43 @@ def save_metadata(
         json.dump(metadata, f, ensure_ascii=False, indent=2)
 
     print(f"Saved metadata file to: {metadata_path}")
+
+# Run a warmup phase using a trial dataset to reduce startup-related latency confounds before the main evaluation loop
+def run_warmup(judge, warmup_path: Path, warmup_n: int) -> int:
+    """
+    Run a short untimed warmup phase to reduce startup-related latency confounds.
+    Returns:
+    - number of warmup examples actually used
+    """
+    if warmup_n <= 0:
+        print("\nWarmup disabled.")
+        return 0
+
+    if not warmup_path.exists():
+        print(f"\nWarmup skipped: file not found at {warmup_path}")
+        return 0
+
+    print(f"\nLoading warmup data from: {warmup_path}")
+    warmup_raw = load_json(warmup_path)
+    warmup_examples = build_examples(warmup_raw)
+
+    warmup_examples = warmup_examples[:warmup_n]
+
+    if not warmup_examples:
+        print("Warmup skipped: no warmup examples available.")
+        return 0
+
+    print(f"Running {len(warmup_examples)} warmup examples...")
+
+    for i, ex in enumerate(warmup_examples, start=1):
+        prompt = support_prompt(ex["context"], ex["hyp"])
+        _label, _p_hall, _raw_text = judge.predict(prompt)
+
+        if i <= 2:
+            print(f"Warmup example {i} complete.")
+
+    print("Warmup complete.")
+    return len(warmup_examples)
 
 # Main function to run the experiment
 def main() -> None:
@@ -255,9 +310,20 @@ def main() -> None:
     preview_examples(examples, n=args.preview_n)
 
     judge = build_judge(args.model_type, args.model_name)
+    
+    warmup_path = Path(args.warmup_path) if args.warmup_path else None
+    warmup_examples_used = 0
+
+    if warmup_path is not None:
+        warmup_examples_used = run_warmup(
+            judge=judge,
+            warmup_path=warmup_path,
+            warmup_n=args.warmup_n,
+        )
+    
     parameter_count = get_model_parameter_count(judge)
     if parameter_count is not None:
-        print(f"Model parameter count: {parameter_count:,}")
+        print(f"\nModel parameter count: {parameter_count:,}")
     
     predictions = []
     latencies = []
@@ -328,6 +394,8 @@ def main() -> None:
         mean_latency_seconds=mean_latency_seconds,
         total_runtime_seconds=total_runtime_seconds,
         parameter_count=parameter_count,
+        warmup_path=warmup_path,
+        warmup_examples_used=warmup_examples_used,
         prompt_version=args.prompt_version,
         notes=args.notes,
     )
