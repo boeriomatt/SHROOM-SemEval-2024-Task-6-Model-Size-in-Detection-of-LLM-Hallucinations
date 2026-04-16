@@ -5,6 +5,17 @@ import matplotlib.pyplot as plt
 METADATA_DIR = Path("outputs/metadata")
 PLOTS_DIR = Path("outputs/plots")
 
+def infer_family(model_type: str, model_name: str) -> str:
+    model_name_lower = model_name.lower()
+
+    if model_type == "flan" or "flan-t5" in model_name_lower:
+        return "flan"
+
+    if model_type == "deberta" or "deberta" in model_name_lower:
+        return "deberta"
+
+    return model_type if model_type else "unknown"
+
 def load_metadata(metadata_dir: Path) -> list[dict]:
     rows = []
 
@@ -16,6 +27,7 @@ def load_metadata(metadata_dir: Path) -> list[dict]:
         cost = data.get("computational_cost", {})
 
         row = {
+            "family": infer_family(data.get("model_type", ""), data.get("model_name", "")),
             "model_name": data.get("model_name", ""),
             "parameter_count": cost.get("parameter_count"),
             "agnostic_acc": scores.get("agnostic_acc"),
@@ -24,21 +36,35 @@ def load_metadata(metadata_dir: Path) -> list[dict]:
         }
         rows.append(row)
 
-    rows.sort(key=lambda x: x["parameter_count"])
     return rows
 
 def short_model_label(model_name: str) -> str:
-    return model_name.replace("google/", "").replace("flan-t5-", "")
+    name = model_name.lower()
 
-def make_plot(
+    if "flan-t5-" in name:
+        return name.split("flan-t5-")[-1]
+
+    if "nli-deberta-v3-" in name:
+        return name.split("nli-deberta-v3-")[-1]
+
+    return model_name
+
+def make_family_plot(
     rows: list[dict],
+    family: str,
     y_key: str,
     y_label: str,
     output_name: str,
 ) -> None:
-    x = [row["parameter_count"] for row in rows]
-    y = [row[y_key] for row in rows]
-    labels = [short_model_label(row["model_name"]) for row in rows]
+    family_rows = [row for row in rows if row["family"] == family]
+    family_rows.sort(key=lambda x: x["parameter_count"])
+
+    if not family_rows:
+        return
+
+    x = [row["parameter_count"] for row in family_rows]
+    y = [row[y_key] for row in family_rows]
+    labels = [short_model_label(row["model_name"]) for row in family_rows]
 
     plt.figure(figsize=(8, 5))
     plt.plot(x, y, marker="o")
@@ -49,31 +75,73 @@ def make_plot(
     plt.xscale("log")
     plt.xlabel("Parameter count (log scale)")
     plt.ylabel(y_label)
-    plt.title(f"FLAN-T5 model size vs {y_label}")
+    plt.title(f"{family.capitalize()} model size vs {y_label}")
     plt.tight_layout()
 
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
     plt.savefig(PLOTS_DIR / output_name, dpi=300, bbox_inches="tight")
     plt.close()
 
-def make_tradeoff_plot(rows: list[dict]) -> None:
-    x = [row["mean_latency_seconds"] for row in rows]
-    y = [row["agnostic_acc"] for row in rows]
-    labels = [short_model_label(row["model_name"]) for row in rows]
+def make_combined_tradeoff_plot(
+    rows: list[dict],
+    y_key: str,
+    y_label: str,
+    output_name: str,
+) -> None:
+    valid_rows = [
+        row for row in rows
+        if row["mean_latency_seconds"] is not None and row[y_key] is not None
+    ]
+
+    if not valid_rows:
+        return
+
+    flan_rows = sorted(
+        [row for row in valid_rows if row["family"] == "flan"],
+        key=lambda x: x["parameter_count"]
+    )
+
+    deberta_rows = sorted(
+        [row for row in valid_rows if row["family"] == "deberta"],
+        key=lambda x: x["parameter_count"]
+    )
 
     plt.figure(figsize=(8, 5))
-    plt.plot(x, y, marker="o")
 
-    for xi, yi, label in zip(x, y, labels):
-        plt.annotate(label, (xi, yi), xytext=(5, 5), textcoords="offset points")
+    if flan_rows:
+        x = [row["mean_latency_seconds"] for row in flan_rows]
+        y = [row[y_key] for row in flan_rows]
+        plt.plot(x, y, marker="o", label="FLAN")
+
+        for row in flan_rows:
+            plt.annotate(
+                short_model_label(row["model_name"]),
+                (row["mean_latency_seconds"], row[y_key]),
+                xytext=(5, 5),
+                textcoords="offset points",
+            )
+
+    if deberta_rows:
+        x = [row["mean_latency_seconds"] for row in deberta_rows]
+        y = [row[y_key] for row in deberta_rows]
+        plt.plot(x, y, marker="o", label="DeBERTa")
+
+        for row in deberta_rows:
+            plt.annotate(
+                short_model_label(row["model_name"]),
+                (row["mean_latency_seconds"], row[y_key]),
+                xytext=(5, -10),
+                textcoords="offset points",
+            )
 
     plt.xlabel("Mean inference latency (seconds/example)")
-    plt.ylabel("Agnostic accuracy")
-    plt.title("Performance-cost trade-off across FLAN-T5 sizes")
+    plt.ylabel(y_label)
+    plt.title(f"Performance-cost trade-off: {y_label}")
+    plt.legend()
     plt.tight_layout()
 
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
-    plt.savefig(PLOTS_DIR / "latency_vs_accuracy.png", dpi=300, bbox_inches="tight")
+    plt.savefig(PLOTS_DIR / output_name, dpi=300, bbox_inches="tight")
     plt.close()
 
 def main() -> None:
@@ -86,28 +154,65 @@ def main() -> None:
         print("No metadata files found.")
         return
 
-    make_plot(
+    # FLAN-only plots
+    make_family_plot(
+        rows=rows,
+        family="flan",
+        y_key="agnostic_acc",
+        y_label="Agnostic accuracy",
+        output_name="flan_size_vs_accuracy.png",
+    )
+    make_family_plot(
+        rows=rows,
+        family="flan",
+        y_key="agnostic_rho",
+        y_label="Agnostic Spearman rho",
+        output_name="flan_size_vs_rho.png",
+    )
+    make_family_plot(
+        rows=rows,
+        family="flan",
+        y_key="mean_latency_seconds",
+        y_label="Mean inference latency (seconds/example)",
+        output_name="flan_size_vs_latency.png",
+    )
+
+    # DeBERTa-only plots
+    make_family_plot(
+        rows=rows,
+        family="deberta",
+        y_key="agnostic_acc",
+        y_label="Agnostic accuracy",
+        output_name="deberta_size_vs_accuracy.png",
+    )
+    make_family_plot(
+        rows=rows,
+        family="deberta",
+        y_key="agnostic_rho",
+        y_label="Agnostic Spearman rho",
+        output_name="deberta_size_vs_rho.png",
+    )
+    make_family_plot(
+        rows=rows,
+        family="deberta",
+        y_key="mean_latency_seconds",
+        y_label="Mean inference latency (seconds/example)",
+        output_name="deberta_size_vs_latency.png",
+    )
+
+    # Combined trade-off plots
+    make_combined_tradeoff_plot(
         rows=rows,
         y_key="agnostic_acc",
         y_label="Agnostic accuracy",
-        output_name="size_vs_accuracy.png",
+        output_name="tradeoff_latency_vs_accuracy.png",
     )
-
-    make_plot(
+    make_combined_tradeoff_plot(
         rows=rows,
         y_key="agnostic_rho",
         y_label="Agnostic Spearman rho",
-        output_name="size_vs_rho.png",
+        output_name="tradeoff_latency_vs_rho.png",
     )
-
-    make_plot(
-        rows=rows,
-        y_key="mean_latency_seconds",
-        y_label="Mean inference latency (seconds/example)",
-        output_name="size_vs_latency.png",
-    )
-
-    make_tradeoff_plot(rows)
 
     print(f"Saved plots to: {PLOTS_DIR}")
 

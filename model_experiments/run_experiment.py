@@ -1,5 +1,4 @@
 import argparse
-from html import parser
 import json
 from pathlib import Path
 import random
@@ -13,6 +12,7 @@ import torch
 
 from src.data import build_examples, load_json, preview_examples
 from src.models_flan import FlanJudge
+from src.models_deberta import DebertaJudge
 from src.prompts import support_prompt
 
 # Later, once implemented:
@@ -116,10 +116,10 @@ def build_judge(model_type: str, model_name: str):
     """
     if model_type == "flan":
         return FlanJudge(model_name=model_name)
-
+    elif model_type == "deberta":
+        return DebertaJudge(model_name=model_name)
+    
     # Uncomment once implemented
-    # elif model_type == "deberta":
-    #     return DebertaJudge(model_name=model_name)
     # elif model_type == "qwen_ollama":
     #     return OllamaJudge(model=model_name)
 
@@ -251,7 +251,7 @@ def save_metadata(
     print(f"Saved metadata file to: {metadata_path}")
 
 # Run a warmup phase using a trial dataset to reduce startup-related latency confounds before the main evaluation loop
-def run_warmup(judge, warmup_path: Path, warmup_n: int) -> int:
+def run_warmup(judge, model_type: str, warmup_path: Path, warmup_n: int) -> int:
     """
     Run a short untimed warmup phase to reduce startup-related latency confounds.
     Returns:
@@ -278,8 +278,15 @@ def run_warmup(judge, warmup_path: Path, warmup_n: int) -> int:
     print(f"Running {len(warmup_examples)} warmup examples...")
 
     for i, ex in enumerate(warmup_examples, start=1):
-        prompt = support_prompt(ex["context"], ex["hyp"])
-        _label, _p_hall, _raw_text = judge.predict(prompt)
+        if model_type == "flan":
+            prompt = support_prompt(ex["context"], ex["hyp"])
+            _label, _p_hall, _raw_text = judge.predict(prompt)
+
+        elif model_type == "deberta":
+            _label, _p_hall, _raw_text = judge.predict(ex["context"], ex["hyp"])
+
+        else:
+            raise ValueError(f"Unsupported model_type during warmup: {model_type}")
 
         if i <= 2:
             print(f"Warmup example {i} complete.")
@@ -317,6 +324,7 @@ def main() -> None:
     if warmup_path is not None:
         warmup_examples_used = run_warmup(
             judge=judge,
+            model_type=args.model_type,
             warmup_path=warmup_path,
             warmup_n=args.warmup_n,
         )
@@ -331,13 +339,24 @@ def main() -> None:
     total_start = time.perf_counter()
 
     for i, ex in enumerate(examples, start=1):
-        prompt = support_prompt(ex["context"], ex["hyp"])
+        if args.model_type == "flan":
+             model_input = support_prompt(ex["context"], ex["hyp"])
+        elif args.model_type == "deberta":
+            model_input = (ex["context"], ex["hyp"])
+        else:
+            raise ValueError(f"Unsupported model_type: {args.model_type}")
         
         if torch.cuda.is_available():
             torch.cuda.synchronize()
         start_time = time.perf_counter()
         
-        label, p_hall, raw_text = judge.predict(prompt)
+        if args.model_type == "flan":
+            label, p_hall, raw_text = judge.predict(model_input)
+        elif args.model_type == "deberta":
+            context, hyp = model_input
+            label, p_hall, raw_text = judge.predict(context, hyp)
+        else:
+            raise ValueError(f"Unsupported model_type: {args.model_type}")
 
         if torch.cuda.is_available():
             torch.cuda.synchronize()
