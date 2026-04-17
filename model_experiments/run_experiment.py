@@ -13,11 +13,8 @@ import torch
 from src.data import build_examples, load_json, preview_examples
 from src.models_flan import FlanJudge
 from src.models_deberta import DebertaJudge
+from src.models_qwen import QwenJudge
 from src.prompts import support_prompt
-
-# Later, once implemented:
-# from src.models_deberta import DebertaJudge
-# from src.models_qwen_ollama import OllamaJudge
 
 # Output folders
 PRED_ARCHIVE_DIR = Path("outputs/predictions/archive")
@@ -36,7 +33,7 @@ def parse_args():
     parser.add_argument(
         "--model-type",
         required=True,
-        choices=["flan", "deberta", "qwen_ollama"],
+        choices=["flan", "deberta", "qwen"],
         help="Model family / inference backend."
     )
     parser.add_argument(
@@ -118,11 +115,8 @@ def build_judge(model_type: str, model_name: str):
         return FlanJudge(model_name=model_name)
     elif model_type == "deberta":
         return DebertaJudge(model_name=model_name)
-    
-    # Uncomment once implemented
-    # elif model_type == "qwen_ollama":
-    #     return OllamaJudge(model=model_name)
-
+    elif model_type == "qwen":
+        return QwenJudge(model_name=model_name)
     raise ValueError(f"Unsupported model_type: {model_type}")
 
 # Run the output checker script from the participant kit
@@ -285,6 +279,9 @@ def run_warmup(judge, model_type: str, warmup_path: Path, warmup_n: int) -> int:
         elif model_type == "deberta":
             _label, _p_hall, _raw_text = judge.predict(ex["context"], ex["hyp"])
 
+        elif model_type == "qwen":
+            _label, _p_hall, _raw_text = judge.predict(ex["context"], ex["hyp"])
+
         else:
             raise ValueError(f"Unsupported model_type during warmup: {model_type}")
 
@@ -340,8 +337,10 @@ def main() -> None:
 
     for i, ex in enumerate(examples, start=1):
         if args.model_type == "flan":
-             model_input = support_prompt(ex["context"], ex["hyp"])
+            model_input = support_prompt(ex["context"], ex["hyp"])
         elif args.model_type == "deberta":
+            model_input = (ex["context"], ex["hyp"])
+        elif args.model_type == "qwen":
             model_input = (ex["context"], ex["hyp"])
         else:
             raise ValueError(f"Unsupported model_type: {args.model_type}")
@@ -353,6 +352,9 @@ def main() -> None:
         if args.model_type == "flan":
             label, p_hall, raw_text = judge.predict(model_input)
         elif args.model_type == "deberta":
+            context, hyp = model_input
+            label, p_hall, raw_text = judge.predict(context, hyp)
+        elif args.model_type == "qwen":
             context, hyp = model_input
             label, p_hall, raw_text = judge.predict(context, hyp)
         else:
