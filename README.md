@@ -64,10 +64,13 @@ Generated files are written under:
 
 Run python summarize_metadata.py to see table of latest model results
 Run python plot_metadata_results.py to generate plots of model data
+Run python score_by_task to see performance on task-based (PG, MT, DM) level
 
 ## Current Progress and Notes
 Currently implemented:
-- FLAN-T5 prompt-based judge
+- FLAN-T5 prompt-based judges
+- DeBERTa-v3 variants encoder-only models
+- Qwen2.5 Instruct decoder-only instruction-tuned LLM judges
 
 Planned / in progress:
 - additional model families
