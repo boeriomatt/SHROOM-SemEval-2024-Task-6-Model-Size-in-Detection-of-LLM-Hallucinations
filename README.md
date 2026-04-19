@@ -44,13 +44,9 @@ Expected structure:
 - model_experiments/data/SHROOM_test-labeled/
 - model_experiments/data/SHROOM_trial-v1.1/
 
-Running an experiment:
+Running an experiment (w/ warmup, to reduce startup-related latency effects):
 Example run with FLAN-T5 Small:
 - python run_experiment.py --model-type flan --model-name google/flan-t5-small --notes "OOTB FLAN-T5 Small"
-
-Optional warmup run:
-To reduce startup-related latency effects, a short warmup phase can be run on the SHROOM trial split before the measured validation pass.
-- python run_experiment.py --model-type flan --model-name google/flan-t5-small --warmup-path data/SHROOM_trial-v1.1/trial-v1.json --warmup-n 10 --notes "FLAN small with warmup"
 
 Outputs:
 Each run produces:
