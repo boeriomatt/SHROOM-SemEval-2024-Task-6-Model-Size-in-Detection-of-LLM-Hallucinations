@@ -17,7 +17,7 @@ from src.models_qwen import QwenJudge
 from src.prompts import support_prompt
 
 # Output folders
-PRED_ARCHIVE_DIR = Path("outputs/predictions/archive")
+PRED_ARCHIVE_DIR = Path("outputs/predictions/archive") 
 PRED_CURRENT_DIR = Path("outputs/predictions/current")
 SCORES_DIR = Path("outputs/scores")
 METADATA_DIR = Path("outputs/metadata")
@@ -116,7 +116,7 @@ def build_judge(model_type: str, model_name: str):
     elif model_type == "deberta":
         return DebertaJudge(model_name=model_name)
     elif model_type == "qwen":
-        return QwenJudge(model_name=model_name)
+        return QwenJudge(model_name=model_name, max_input_length=512, enable_raw_generation=False, use_single_token_verbalizers=True, use_4bit=False, reserve_answer_tokens=8, attn_implementation="sdpa")
     raise ValueError(f"Unsupported model_type: {model_type}")
 
 # Run the output checker script from the participant kit

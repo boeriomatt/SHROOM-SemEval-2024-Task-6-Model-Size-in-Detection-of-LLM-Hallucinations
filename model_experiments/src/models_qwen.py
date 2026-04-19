@@ -1,7 +1,11 @@
 import math
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from src.prompts import support_prompt_qwen
+from src.prompts import support_prompt
+try:
+    from transformers import BitsAndBytesConfig
+except Exception:
+    BitsAndBytesConfig = None
 
 class QwenJudge:
     """
@@ -9,79 +13,110 @@ class QwenJudge:
     Interpretation:
     - "supported"   -> Not Hallucination
     - "unsupported" -> Hallucination
+    Latency-optimized prompt-based hallucination judge for Qwen Instruct.
+    Main changes vs the original (non-optimized) version:
+    - optional 4-bit loading for large checkpoints
+    - single-token verbalizers by default: yes / no
+    - optional raw generation (disabled by default for full eval)
+    - optional preview generation for the first few examples only
+    - reserves a few tokens for the answer during scoring
     """
     def __init__(
         self,
         model_name: str,
         max_input_length: int = 512,
+        enable_raw_generation: bool = False,
+        use_single_token_verbalizers: bool = True,
+        use_4bit: bool = False,
+        reserve_answer_tokens: int = 8,
+        attn_implementation: str | None = None,
     ) -> None:
         self.model_name = model_name
         self.max_input_length = max_input_length
+        self.enable_raw_generation = enable_raw_generation
+        self.use_single_token_verbalizers = use_single_token_verbalizers
+        self.use_4bit = use_4bit
+        self.reserve_answer_tokens = reserve_answer_tokens
+        self.attn_implementation = attn_implementation
+
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        self.model = AutoModelForCausalLM.from_pretrained(model_name)
-        self.model.to(self.device)
+        model_kwargs = {}
+
+        if self.device == "cuda":
+            model_kwargs["torch_dtype"] = torch.float16
+
+        if self.attn_implementation is not None:
+            model_kwargs["attn_implementation"] = self.attn_implementation
+
+        if self.use_4bit:
+            if BitsAndBytesConfig is None:
+                raise ImportError(
+                    "BitsAndBytesConfig is unavailable. Install/update transformers and bitsandbytes first."
+                )
+            model_kwargs["quantization_config"] = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_quant_type="nf4",
+            )
+            model_kwargs["device_map"] = "auto"
+            self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+        else:
+            self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+            self.model.to(self.device)
+
         self.model.eval()
 
-        self.supported_variants = [
-            "supported",
-            "Supported",
-            "supported.",
-            "Supported.",
-        ]
-        self.unsupported_variants = [
-            "unsupported",
-            "Unsupported",
-            "unsupported.",
-            "Unsupported.",
-        ]
+        if self.use_single_token_verbalizers:
+            self.supported_variants = ["yes"]
+            self.unsupported_variants = ["no"]
+        else:
+            self.supported_variants = ["yes", "Yes", "yes.", "Yes."]
+            self.unsupported_variants = ["no", "No", "no.", "No."]
 
     def _build_chat_prompt(self, context: str, hyp: str) -> str:
-        """
-        Build a chat-formatted prompt for Qwen using the tokenizer's chat template.
-        """
-        user_prompt = support_prompt_qwen(context, hyp)
-
-        messages = [
-            {
-                "role": "user",
-                "content": user_prompt,
-            }
-        ]
-
-        prompt_text = self.tokenizer.apply_chat_template(
+        user_prompt = support_prompt(context, hyp)
+        messages = [{"role": "user", "content": user_prompt}]
+        return self.tokenizer.apply_chat_template(
             messages,
             tokenize=False,
             add_generation_prompt=True,
         )
 
-        return prompt_text
+    def _model_device(self) -> torch.device:
+        # Works even when the model is loaded with device_map="auto".
+        return next(self.model.parameters()).device
 
     @torch.no_grad()
     def _prompt_logprob(self, prompt_text: str, answer: str) -> float:
         """
-        Compute log P(answer | prompt_text) by scoring only the answer tokens conditioned on the chat-formatted prompt.
+        Compute log P(answer | prompt_text) by scoring only answer tokens.
+        Reserve a few tokens so answer tokens are less likely to be truncated away.
         """
+        prompt_budget = max(1, self.max_input_length - self.reserve_answer_tokens)
         full_text = prompt_text + answer
+
+        prompt_inputs = self.tokenizer(
+            prompt_text,
+            return_tensors="pt",
+            truncation=True,
+            max_length=prompt_budget,
+        )
 
         full_inputs = self.tokenizer(
             full_text,
             return_tensors="pt",
             truncation=True,
             max_length=self.max_input_length,
-        ).to(self.device)
+        )
 
-        prompt_inputs = self.tokenizer(
-            prompt_text,
-            return_tensors="pt",
-            truncation=True,
-            max_length=self.max_input_length,
-        ).to(self.device)
+        device = self._model_device()
+        prompt_inputs = {k: v.to(device) for k, v in prompt_inputs.items()}
+        full_inputs = {k: v.to(device) for k, v in full_inputs.items()}
 
         input_ids = full_inputs["input_ids"]
         attention_mask = full_inputs["attention_mask"]
@@ -99,29 +134,24 @@ class QwenJudge:
 
         prompt_len = prompt_inputs["input_ids"].shape[1]
         answer_start = max(prompt_len - 1, 0)
-
         answer_logprob = token_log_probs[:, answer_start:].sum().item()
         return float(answer_logprob)
 
     def _aggregate_candidate_logprob(self, prompt_text: str, variants: list[str]) -> float:
-        """
-        Aggregate multiple verbalizer variants using log-sum-exp.
-        """
         logps = [self._prompt_logprob(prompt_text, variant) for variant in variants]
         max_logp = max(logps)
         return float(max_logp + math.log(sum(math.exp(lp - max_logp) for lp in logps)))
 
     @torch.no_grad()
     def generate_raw(self, prompt_text: str) -> str:
-        """
-        Deterministic greedy generation for debugging.
-        """
         inputs = self.tokenizer(
             prompt_text,
             return_tensors="pt",
             truncation=True,
             max_length=self.max_input_length,
-        ).to(self.device)
+        )
+        device = self._model_device()
+        inputs = {k: v.to(device) for k, v in inputs.items()}
 
         outputs = self.model.generate(
             **inputs,
@@ -134,20 +164,10 @@ class QwenJudge:
         return self.tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
 
     def predict(self, context: str, hyp: str) -> tuple[str, float, str]:
-        """
-        Returns:
-        - label: SHROOM label
-        - p_hall: soft hallucination probability in [0,1]
-        - raw_text: deterministic greedy generation for debugging
-        """
         prompt_text = self._build_chat_prompt(context, hyp)
 
-        logp_supported = self._aggregate_candidate_logprob(
-            prompt_text, self.supported_variants
-        )
-        logp_unsupported = self._aggregate_candidate_logprob(
-            prompt_text, self.unsupported_variants
-        )
+        logp_supported = self._aggregate_candidate_logprob(prompt_text, self.supported_variants)
+        logp_unsupported = self._aggregate_candidate_logprob(prompt_text, self.unsupported_variants)
 
         max_logp = max(logp_supported, logp_unsupported)
         p_supported = math.exp(logp_supported - max_logp)
@@ -159,7 +179,10 @@ class QwenJudge:
 
         p_hall = float(p_unsupported)
         label = "Hallucination" if p_hall >= 0.5 else "Not Hallucination"
-        raw_text = self.generate_raw(prompt_text)
+
+        raw_text = ""
+        if self.enable_raw_generation:
+            raw_text = self.generate_raw(prompt_text)
 
         return label, p_hall, raw_text
 

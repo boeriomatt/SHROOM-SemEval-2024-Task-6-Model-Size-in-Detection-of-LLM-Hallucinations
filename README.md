@@ -64,7 +64,18 @@ Generated files are written under:
 
 Run python summarize_metadata.py to see table of latest model results
 Run python plot_metadata_results.py to generate plots of model data
-Run python score_by_task to see performance on task-based (PG, MT, DM) level
+Run python score_by_task.py to see performance on task-based (PG, MT, DM) level
+- CLI example:
+python .\score_by_task.py `
+  .\outputs\predictions\archive\val.model-agnostic__Qwen__Qwen2.5-1.5B-Instruct.json `
+  .\data\SHROOM_dev-v2\val.model-agnostic.json `
+  --output .\outputs\scores\task_scores__Qwen__Qwen2.5-1.5B-Instruct.txt
+Run python confusion_by_task.py to see summarized predicted class proportions and confusion matrix
+- CLI example:
+python .\confusion_by_task.py `
+  .\outputs\predictions\archive\val.model-agnostic__Qwen__Qwen2.5-3B-Instruct.json `
+  .\data\SHROOM_dev-v2\val.model-agnostic.json `
+  --output .\outputs\scores\confusion__Qwen__Qwen2.5-3B-Instruct.txt
 
 ## Current Progress and Notes
 Currently implemented:

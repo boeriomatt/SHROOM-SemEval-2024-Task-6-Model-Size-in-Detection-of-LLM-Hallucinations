@@ -13,6 +13,9 @@ def infer_family(model_type: str, model_name: str) -> str:
 
     if model_type == "deberta" or "deberta" in model_name_lower:
         return "deberta"
+    
+    if model_type == "qwen" or "qwen" in model_name_lower:
+        return "qwen"
 
     return model_type if model_type else "unknown"
 
@@ -46,6 +49,9 @@ def short_model_label(model_name: str) -> str:
 
     if "nli-deberta-v3-" in name:
         return name.split("nli-deberta-v3-")[-1]
+    
+    if "qwen2.5-" in name and "-instruct" in name:
+        return name.split("qwen2.5-")[-1].replace("-instruct", "")
 
     return model_name
 
@@ -106,6 +112,11 @@ def make_combined_tradeoff_plot(
         key=lambda x: x["parameter_count"]
     )
 
+    qwen_rows = sorted(
+        [row for row in valid_rows if row["family"] == "qwen"],
+        key=lambda x: x["parameter_count"]
+    )
+
     plt.figure(figsize=(8, 5))
 
     if flan_rows:
@@ -127,6 +138,19 @@ def make_combined_tradeoff_plot(
         plt.plot(x, y, marker="o", label="DeBERTa")
 
         for row in deberta_rows:
+            plt.annotate(
+                short_model_label(row["model_name"]),
+                (row["mean_latency_seconds"], row[y_key]),
+                xytext=(5, -10),
+                textcoords="offset points",
+            )
+    
+    if qwen_rows:
+        x = [row["mean_latency_seconds"] for row in qwen_rows]
+        y = [row[y_key] for row in qwen_rows]
+        plt.plot(x, y, marker="o", label="Qwen")
+
+        for row in qwen_rows:
             plt.annotate(
                 short_model_label(row["model_name"]),
                 (row["mean_latency_seconds"], row[y_key]),
@@ -198,6 +222,29 @@ def main() -> None:
         y_key="mean_latency_seconds",
         y_label="Mean inference latency (seconds/example)",
         output_name="deberta_size_vs_latency.png",
+    )
+
+    # Qwen-only plots
+    make_family_plot(
+        rows=rows,
+        family="qwen",
+        y_key="agnostic_acc",
+        y_label="Agnostic accuracy",
+        output_name="qwen_size_vs_accuracy.png",
+    )
+    make_family_plot(
+        rows=rows,
+        family="qwen",
+        y_key="agnostic_rho",
+        y_label="Agnostic Spearman rho",
+        output_name="qwen_size_vs_rho.png",
+    )
+    make_family_plot(
+        rows=rows,
+        family="qwen",
+        y_key="mean_latency_seconds",
+        y_label="Mean inference latency (seconds/example)",
+        output_name="qwen_size_vs_latency.png",
     )
 
     # Combined trade-off plots
