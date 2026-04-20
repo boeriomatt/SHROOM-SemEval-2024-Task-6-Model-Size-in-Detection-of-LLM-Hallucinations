@@ -1,7 +1,7 @@
 # SHROOM SemEval 2024 Task 6: Model Size in Detection of LLM Hallucinations
 This repository contains experiments for evaluating how model size affects hallucination detection performance on the **SHROOM SemEval 2024 Task 6** benchmark. The project focuses on comparing out-of-the-box and, later, fine-tuned language models on the task of identifying whether a generated sentence is semantically supported by a given context.
 
-The current implementation includes a prompt-based **FLAN-T5 judge** that predicts:
+For each record, the current implementation predicts:
 - a binary label: `Hallucination` or `Not Hallucination`
 - a soft score: `p(Hallucination)`
 
@@ -9,21 +9,25 @@ The project also records computational cost measurements for each model run, inc
 - total parameter count
 - mean inference latency per example
 
-## Project structure (for model experiements)
+## Project structure (for Model Experiements)
 ```text
 model_experiments/
 ├── data/                     # Local SHROOM datasets (ignored by git)
 │   ├── SHROOM_dev-v2/
 │   ├── SHROOM_test-labeled/
 │   └── SHROOM_trial-v1.1/
-├── outputs/                  # Generated predictions, scores, metadata
+├── outputs/                  # Generated predictions, scores, metadata, plots
 │   ├── metadata/
+|   ├── plots/
 │   ├── predictions/
 │   └── scores/
 ├── participant_kit/          # Official evaluation scripts
 ├── src/
 │   ├── data.py
+│   ├── models_deberta.py
 │   ├── models_flan.py
+│   ├── models_gemma.py
+│   ├── models_qwen.py
 │   └── prompts.py
 ├── run_experiment.py         # Main experiment runner
 ├── requirements.txt
@@ -77,10 +81,9 @@ python .\confusion_by_task.py `
 Currently implemented:
 - FLAN-T5 prompt-based judges
 - DeBERTa-v3 variants encoder-only models
-- Qwen2.5 Instruct decoder-only instruction-tuned LLM judges
+- Qwen2.5 and Gemma 3 decoder-only instruction-tuned LLM judges
 
 Planned / in progress:
-- additional model families
 - fine-tuned checkpoints
 - broader scaling comparisons across architectures
 

@@ -14,6 +14,7 @@ from src.data import build_examples, load_json, preview_examples
 from src.models_flan import FlanJudge
 from src.models_deberta import DebertaJudge
 from src.models_qwen import QwenJudge
+from src.models_gemma import GemmaJudge
 from src.prompts import support_prompt
 
 # Output folders
@@ -33,7 +34,7 @@ def parse_args():
     parser.add_argument(
         "--model-type",
         required=True,
-        choices=["flan", "deberta", "qwen"],
+        choices=["flan", "deberta", "qwen", "gemma"],
         help="Model family / inference backend."
     )
     parser.add_argument(
@@ -117,6 +118,8 @@ def build_judge(model_type: str, model_name: str):
         return DebertaJudge(model_name=model_name)
     elif model_type == "qwen":
         return QwenJudge(model_name=model_name, max_input_length=512, enable_raw_generation=False, use_single_token_verbalizers=True, use_4bit=False, reserve_answer_tokens=8, attn_implementation="sdpa")
+    elif model_type == "gemma":
+        return GemmaJudge(model_name=model_name, max_input_length=512, enable_raw_generation=False, use_single_token_verbalizers=True, use_4bit=False, reserve_answer_tokens=8, attn_implementation="sdpa")
     raise ValueError(f"Unsupported model_type: {model_type}")
 
 # Run the output checker script from the participant kit
@@ -279,7 +282,7 @@ def run_warmup(judge, model_type: str, warmup_path: Path, warmup_n: int) -> int:
         elif model_type == "deberta":
             _label, _p_hall, _raw_text = judge.predict(ex["context"], ex["hyp"])
 
-        elif model_type == "qwen":
+        elif model_type in {"qwen", "gemma"}:
             _label, _p_hall, _raw_text = judge.predict(ex["context"], ex["hyp"])
 
         else:
@@ -340,7 +343,7 @@ def main() -> None:
             model_input = support_prompt(ex["context"], ex["hyp"])
         elif args.model_type == "deberta":
             model_input = (ex["context"], ex["hyp"])
-        elif args.model_type == "qwen":
+        elif args.model_type in {"qwen", "gemma"}:
             model_input = (ex["context"], ex["hyp"])
         else:
             raise ValueError(f"Unsupported model_type: {args.model_type}")
@@ -354,7 +357,7 @@ def main() -> None:
         elif args.model_type == "deberta":
             context, hyp = model_input
             label, p_hall, raw_text = judge.predict(context, hyp)
-        elif args.model_type == "qwen":
+        elif args.model_type in {"qwen", "gemma"}:
             context, hyp = model_input
             label, p_hall, raw_text = judge.predict(context, hyp)
         else:
