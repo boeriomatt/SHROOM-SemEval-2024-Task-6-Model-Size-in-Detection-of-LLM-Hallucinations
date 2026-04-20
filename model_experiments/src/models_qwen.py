@@ -11,8 +11,8 @@ class QwenJudge:
     """
     Prompt-based hallucination judge using a decoder-only Qwen Instruct model.
     Interpretation:
-    - "supported"   -> Not Hallucination
-    - "unsupported" -> Hallucination
+    - "yes"  -> supported -> Not Hallucination
+    - "no"   -> unsupported -> Hallucination
     Latency-optimized prompt-based hallucination judge for Qwen Instruct.
     Main changes vs the original (non-optimized) version:
     - optional 4-bit loading for large checkpoints
