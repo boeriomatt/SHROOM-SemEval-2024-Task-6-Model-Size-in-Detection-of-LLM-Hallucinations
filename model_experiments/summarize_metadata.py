@@ -50,9 +50,38 @@ def infer_family(model_type: str, model_name: str) -> str:
         return "flan"
     if model_type == "deberta" or "deberta" in model_name_lower:
         return "deberta"
+    if model_type == "gemma" or "gemma" in model_name_lower:
+        return "gemma"
     if model_type.startswith("qwen") or "qwen" in model_name_lower:
         return "qwen"
     return model_type if model_type else "unknown"
+
+def infer_comparison_bucket(model_type: str, model_name: str) -> str:
+    model_type = (model_type or "").lower()
+    model_name_lower = (model_name or "").lower()
+
+    if model_type == "flan" or "flan-t5" in model_name_lower:
+        return "flan"
+    if model_type == "gemma" or "gemma" in model_name_lower:
+        return "gemma"
+    if model_type.startswith("qwen") or "qwen" in model_name_lower:
+        return "qwen"
+    if model_type == "deberta" or "deberta" in model_name_lower:
+        if model_name_lower.startswith("cross-encoder/nli-deberta-v3-"):
+            return "deberta_cross_encoder"
+        return "deberta_other_nli"
+
+    return model_type if model_type else "unknown"
+
+def format_bucket_label(bucket: str) -> str:
+    mapping = {
+        "flan": "main",
+        "gemma": "main",
+        "qwen": "main",
+        "deberta_cross_encoder": "cross-encoder",
+        "deberta_other_nli": "other-nli",
+    }
+    return mapping.get(bucket, bucket)
 
 def load_json(path: Path):
     with path.open("r", encoding="utf-8") as f:
@@ -70,9 +99,13 @@ def load_metadata_files(metadata_dir: Path) -> list[dict]:
         model_type = data.get("model_type", "")
         model_name = data.get("model_name", "")
 
+        family = infer_family(model_type, model_name)
+        comparison_bucket = infer_comparison_bucket(model_type, model_name)
+
         row = {
             "metadata_path": str(path),
-            "family": infer_family(model_type, model_name),
+            "family": family,
+            "comparison_bucket": comparison_bucket,
             "model_type": model_type,
             "model_name": model_name,
             "parameter_count": cost.get("parameter_count"),
@@ -95,17 +128,18 @@ def sort_rows(rows: list[dict]) -> list[dict]:
         rows,
         key=lambda x: (
             x["family"],
+            x["comparison_bucket"],
             x["parameter_count"] is None,
             x["parameter_count"] if x["parameter_count"] is not None else float("inf"),
         ),
     )
 
 def add_family_comparison_columns(rows: list[dict]) -> list[dict]:
-    previous_by_family: dict[str, dict] = {}
+    previous_by_bucket: dict[str, dict] = {}
 
     for row in rows:
-        family = row["family"]
-        previous = previous_by_family.get(family)
+        bucket = row["comparison_bucket"]
+        previous = previous_by_bucket.get(bucket)
 
         comparable = (
             previous is not None
@@ -145,7 +179,7 @@ def add_family_comparison_columns(rows: list[dict]) -> list[dict]:
                 else None
             )
 
-        previous_by_family[family] = row
+        previous_by_bucket[bucket] = row
 
     return rows
 
@@ -239,23 +273,23 @@ def bootstrap_delta_rho(pred_a: list[dict], pred_b: list[dict], ref_items: list[
 
 def compute_family_significance(rows: list[dict]) -> list[dict]:
     """
-    Compare each model against the previous model in the same family, but only when
-    input_path and prompt_version match.
+    Compare each model against the previous model in the same comparison bucket,
+    but only when input_path and prompt_version match.
     """
-    family_groups: dict[str, list[dict]] = {}
+    bucket_groups: dict[str, list[dict]] = {}
     for row in rows:
-        family_groups.setdefault(row["family"], []).append(row)
+        bucket_groups.setdefault(row["comparison_bucket"], []).append(row)
 
     results = []
 
-    for family, family_rows in family_groups.items():
-        family_rows = sorted(
-            family_rows,
+    for bucket, bucket_rows in bucket_groups.items():
+        bucket_rows = sorted(
+            bucket_rows,
             key=lambda x: x["parameter_count"] if x["parameter_count"] is not None else float("inf"),
         )
 
         previous = None
-        for row in family_rows:
+        for row in bucket_rows:
             comparable = (
                 previous is not None
                 and row.get("input_path") == previous.get("input_path")
@@ -273,22 +307,28 @@ def compute_family_significance(rows: list[dict]) -> list[dict]:
                 pred_curr = load_json(Path(row["archive_prediction_path"]))
                 pred_prev = load_json(Path(previous["archive_prediction_path"]))
 
+                curr_acc = compute_accuracy_from_items(pred_curr, ref_items)
+                prev_acc = compute_accuracy_from_items(pred_prev, ref_items)
+                curr_rho = compute_rho_from_items(pred_curr, ref_items)
+                prev_rho = compute_rho_from_items(pred_prev, ref_items)
+
                 acc_test = mcnemar_exact_test(pred_curr, pred_prev, ref_items)
                 rho_test = bootstrap_delta_rho(pred_curr, pred_prev, ref_items)
 
                 results.append(
                     {
-                        "family": family,
+                        "family": row["family"],
+                        "comparison_bucket": bucket,
                         "previous_model": previous["model_name"],
                         "current_model": row["model_name"],
                         "input_path": row.get("input_path"),
                         "prompt_version": row.get("prompt_version"),
-                        "previous_acc": compute_accuracy_from_items(pred_prev, ref_items),
-                        "current_acc": compute_accuracy_from_items(pred_curr, ref_items),
-                        "delta_acc": compute_accuracy_from_items(pred_curr, ref_items) - compute_accuracy_from_items(pred_prev, ref_items),
-                        "previous_rho": compute_rho_from_items(pred_prev, ref_items),
-                        "current_rho": compute_rho_from_items(pred_curr, ref_items),
-                        "delta_rho": compute_rho_from_items(pred_curr, ref_items) - compute_rho_from_items(pred_prev, ref_items),
+                        "previous_acc": prev_acc,
+                        "current_acc": curr_acc,
+                        "delta_acc": curr_acc - prev_acc,
+                        "previous_rho": prev_rho,
+                        "current_rho": curr_rho,
+                        "delta_rho": curr_rho - prev_rho,
                         "accuracy_significance": acc_test,
                         "rho_significance": rho_test,
                     }
@@ -303,6 +343,7 @@ def write_csv(rows: list[dict], output_path: Path) -> None:
 
     fieldnames = [
         "family",
+        "comparison_bucket",
         "model_type",
         "model_name",
         "parameter_count",
@@ -335,14 +376,15 @@ def write_markdown(rows: list[dict], output_path: Path) -> None:
         lines.append(f"## {family.capitalize()}")
         lines.append("")
         lines.append(
-            "| Model | Params | Acc | Rho | Mean latency (s/example) | ΔAcc vs prev (family) | ΔRho vs prev (family) | Latency x prev (family) | Params x prev (family) |"
+            "| Model | Bucket | Params | Acc | Rho | Mean latency (s/example) | ΔAcc vs prev (bucket) | ΔRho vs prev (bucket) | Latency x prev (bucket) | Params x prev (bucket) |"
         )
-        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|")
+        lines.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|")
 
         for row in family_rows:
             lines.append(
                 "| "
                 f'{row["model_name"]} | '
+                f'{format_bucket_label(row["comparison_bucket"])} | '
                 f'{row["parameter_count_readable"]} | '
                 f'{format_float(row["agnostic_acc"])} | '
                 f'{format_float(row["agnostic_rho"])} | '
@@ -371,24 +413,24 @@ def write_significance_outputs(results: list[dict], json_path: Path, md_path: Pa
             indent=2,
         )
 
-    family_groups: dict[str, list[dict]] = {}
+    bucket_groups: dict[str, list[dict]] = {}
     for row in results:
-        family_groups.setdefault(row["family"], []).append(row)
+        bucket_groups.setdefault(row["comparison_bucket"], []).append(row)
 
     lines = ["# Family Significance Tests", ""]
     lines.append("Accuracy significance is based on McNemar's exact test.")
     lines.append("Rho significance is based on a paired bootstrap over examples.")
     lines.append("")
 
-    for family, family_rows in family_groups.items():
-        lines.append(f"## {family.capitalize()}")
+    for bucket, bucket_rows in bucket_groups.items():
+        lines.append(f"## {bucket.replace('_', ' ').title()}")
         lines.append("")
         lines.append(
             "| Previous model | Current model | ΔAcc | Acc p-value | ΔRho | 95% CI for ΔRho | Rho p-value |"
         )
         lines.append("|---|---|---:|---:|---:|---|---:|")
 
-        for row in family_rows:
+        for row in bucket_rows:
             rho_sig = row["rho_significance"]
             ci_str = ""
             if rho_sig["ci_lower"] is not None and rho_sig["ci_upper"] is not None:
@@ -415,12 +457,12 @@ def print_significance_tables(results: list[dict]) -> None:
         print("\nNo within-family significance comparisons were produced.")
         return
 
-    family_groups: dict[str, list[dict]] = {}
+    bucket_groups: dict[str, list[dict]] = {}
     for row in results:
-        family_groups.setdefault(row["family"], []).append(row)
+        bucket_groups.setdefault(row["comparison_bucket"], []).append(row)
 
-    for family, family_rows in family_groups.items():
-        print(f"\n{family.upper()} Significance Table")
+    for bucket, bucket_rows in bucket_groups.items():
+        print(f"\n{bucket.upper()} Significance Table")
         print("-" * 160)
         print(
             f'{"Previous model":45} {"Current model":45} '
@@ -428,7 +470,7 @@ def print_significance_tables(results: list[dict]) -> None:
         )
         print("-" * 160)
 
-        for row in family_rows:
+        for row in bucket_rows:
             rho_sig = row["rho_significance"]
 
             if rho_sig["ci_lower"] is not None and rho_sig["ci_upper"] is not None:
@@ -455,7 +497,7 @@ def print_family_tables(rows: list[dict]) -> None:
         print(f"\n{family.upper()} Summary Table")
         print("-" * 160)
         print(
-            f'{"Model":45} {"Params":>10} {"Acc":>8} {"Rho":>8} {"Latency":>10} '
+            f'{"Model":45} {"Bucket":14} {"Params":>10} {"Acc":>8} {"Rho":>8} {"Latency":>10} '
             f'{"ΔAcc":>8} {"ΔRho":>8} {"Lat x":>8} {"Par x":>8}'
         )
         print("-" * 160)
@@ -463,6 +505,7 @@ def print_family_tables(rows: list[dict]) -> None:
         for row in family_rows:
             print(
                 f'{row["model_name"]:45} '
+                f'{format_bucket_label(row["comparison_bucket"]):14} '
                 f'{row["parameter_count_readable"]:>10} '
                 f'{format_float(row["agnostic_acc"]):>8} '
                 f'{format_float(row["agnostic_rho"]):>8} '

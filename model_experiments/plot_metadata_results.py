@@ -6,18 +6,52 @@ METADATA_DIR = Path("outputs/metadata")
 PLOTS_DIR = Path("outputs/plots")
 
 def infer_family(model_type: str, model_name: str) -> str:
-    model_name_lower = model_name.lower()
+    model_type = (model_type or "").lower()
+    model_name_lower = (model_name or "").lower()
 
     if model_type == "flan" or "flan-t5" in model_name_lower:
         return "flan"
 
     if model_type == "deberta" or "deberta" in model_name_lower:
         return "deberta"
-    
-    if model_type == "qwen" or "qwen" in model_name_lower:
+
+    if model_type == "gemma" or "gemma" in model_name_lower:
+        return "gemma"
+
+    if model_type.startswith("qwen") or "qwen" in model_name_lower:
         return "qwen"
 
     return model_type if model_type else "unknown"
+
+def infer_comparison_bucket(model_type: str, model_name: str) -> str:
+    model_type = (model_type or "").lower()
+    model_name_lower = (model_name or "").lower()
+
+    if model_type == "flan" or "flan-t5" in model_name_lower:
+        return "flan"
+
+    if model_type == "gemma" or "gemma" in model_name_lower:
+        return "gemma"
+
+    if model_type.startswith("qwen") or "qwen" in model_name_lower:
+        return "qwen"
+
+    if model_type == "deberta" or "deberta" in model_name_lower:
+        if model_name_lower.startswith("cross-encoder/nli-deberta-v3-"):
+            return "deberta_cross_encoder"
+        return "deberta_other_nli"
+
+    return model_type if model_type else "unknown"
+
+def bucket_title(bucket: str) -> str:
+    mapping = {
+        "flan": "FLAN-T5",
+        "qwen": "Qwen2.5",
+        "gemma": "Gemma 3",
+        "deberta_cross_encoder": "DeBERTa cross-encoder",
+        "deberta_other_nli": "DeBERTa NLI variants",
+    }
+    return mapping.get(bucket, bucket.replace("_", " ").title())
 
 def load_metadata(metadata_dir: Path) -> list[dict]:
     rows = []
@@ -29,12 +63,16 @@ def load_metadata(metadata_dir: Path) -> list[dict]:
         scores = data.get("scores", {})
         cost = data.get("computational_cost", {})
 
+        model_type = data.get("model_type", "")
+        model_name = data.get("model_name", "")
+
         row = {
-            "family": infer_family(data.get("model_type", ""), data.get("model_name", "")),
-            "model_name": data.get("model_name", ""),
+            "family": infer_family(model_type, model_name),
+            "comparison_bucket": infer_comparison_bucket(model_type, model_name),
+            "model_name": model_name,
             "parameter_count": cost.get("parameter_count"),
-            "agnostic_acc": scores.get("agnostic_acc"),
-            "agnostic_rho": scores.get("agnostic_rho"),
+            "agnostic_acc": scores.get("agnostic_acc", scores.get("acc_agnostic")),
+            "agnostic_rho": scores.get("agnostic_rho", scores.get("rho_agnostic")),
             "mean_latency_seconds": cost.get("mean_inference_latency_seconds_per_example"),
         }
         rows.append(row)
@@ -47,30 +85,43 @@ def short_model_label(model_name: str) -> str:
     if "flan-t5-" in name:
         return name.split("flan-t5-")[-1]
 
-    if "nli-deberta-v3-" in name:
-        return name.split("nli-deberta-v3-")[-1]
-    
+    if "cross-encoder/nli-deberta-v3-" in name:
+        return name.split("cross-encoder/nli-deberta-v3-")[-1]
+
+    if "deberta-v3-base-tasksource-nli" in name:
+        return "tasksource-base"
+
+    if "moritzlaurer/deberta-v3-large-mnli-fever-anli" in name:
+        return "ml-fever-anli-large"
+
     if "qwen2.5-" in name and "-instruct" in name:
         return name.split("qwen2.5-")[-1].replace("-instruct", "")
+
+    if "gemma-3-" in name and "-it" in name:
+        return name.split("gemma-3-")[-1].replace("-it", "")
 
     return model_name
 
 def make_family_plot(
     rows: list[dict],
-    family: str,
+    bucket: str,
     y_key: str,
     y_label: str,
     output_name: str,
 ) -> None:
-    family_rows = [row for row in rows if row["family"] == family]
-    family_rows.sort(key=lambda x: x["parameter_count"])
+    bucket_rows = [row for row in rows if row["comparison_bucket"] == bucket]
+    bucket_rows = [
+        row for row in bucket_rows
+        if row["parameter_count"] is not None and row[y_key] is not None
+    ]
+    bucket_rows.sort(key=lambda x: x["parameter_count"])
 
-    if not family_rows:
+    if not bucket_rows:
         return
 
-    x = [row["parameter_count"] for row in family_rows]
-    y = [row[y_key] for row in family_rows]
-    labels = [short_model_label(row["model_name"]) for row in family_rows]
+    x = [row["parameter_count"] for row in bucket_rows]
+    y = [row[y_key] for row in bucket_rows]
+    labels = [short_model_label(row["model_name"]) for row in bucket_rows]
 
     plt.figure(figsize=(8, 5))
     plt.plot(x, y, marker="o")
@@ -81,7 +132,7 @@ def make_family_plot(
     plt.xscale("log")
     plt.xlabel("Parameter count (log scale)")
     plt.ylabel(y_label)
-    plt.title(f"{family.capitalize()} model size vs {y_label}")
+    plt.title(f"{bucket_title(bucket)} model size vs {y_label}")
     plt.tight_layout()
 
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -102,65 +153,96 @@ def make_combined_tradeoff_plot(
     if not valid_rows:
         return
 
-    flan_rows = sorted(
-        [row for row in valid_rows if row["family"] == "flan"],
-        key=lambda x: x["parameter_count"]
-    )
+    bucket_specs = [
+        ("flan", "FLAN", (5, 5)),
+        ("deberta_cross_encoder", "DeBERTa (cross-encoder)", (5, -10)),
+        ("deberta_other_nli", "DeBERTa (other NLI)", (5, 10)),
+        ("qwen", "Qwen", (5, -10)),
+        ("gemma", "Gemma", (5, 5)),
+    ]
 
-    deberta_rows = sorted(
-        [row for row in valid_rows if row["family"] == "deberta"],
-        key=lambda x: x["parameter_count"]
-    )
+    plt.figure(figsize=(9, 6))
 
-    qwen_rows = sorted(
-        [row for row in valid_rows if row["family"] == "qwen"],
-        key=lambda x: x["parameter_count"]
-    )
+    for bucket, legend_label, offset in bucket_specs:
+        bucket_rows = sorted(
+            [row for row in valid_rows if row["comparison_bucket"] == bucket],
+            key=lambda x: x["parameter_count"] if x["parameter_count"] is not None else float("inf"),
+        )
 
-    plt.figure(figsize=(8, 5))
+        if not bucket_rows:
+            continue
 
-    if flan_rows:
-        x = [row["mean_latency_seconds"] for row in flan_rows]
-        y = [row[y_key] for row in flan_rows]
-        plt.plot(x, y, marker="o", label="FLAN")
+        x = [row["mean_latency_seconds"] for row in bucket_rows]
+        y = [row[y_key] for row in bucket_rows]
+        plt.plot(x, y, marker="o", label=legend_label)
 
-        for row in flan_rows:
+        for row in bucket_rows:
             plt.annotate(
                 short_model_label(row["model_name"]),
                 (row["mean_latency_seconds"], row[y_key]),
-                xytext=(5, 5),
-                textcoords="offset points",
-            )
-
-    if deberta_rows:
-        x = [row["mean_latency_seconds"] for row in deberta_rows]
-        y = [row[y_key] for row in deberta_rows]
-        plt.plot(x, y, marker="o", label="DeBERTa")
-
-        for row in deberta_rows:
-            plt.annotate(
-                short_model_label(row["model_name"]),
-                (row["mean_latency_seconds"], row[y_key]),
-                xytext=(5, -10),
-                textcoords="offset points",
-            )
-    
-    if qwen_rows:
-        x = [row["mean_latency_seconds"] for row in qwen_rows]
-        y = [row[y_key] for row in qwen_rows]
-        plt.plot(x, y, marker="o", label="Qwen")
-
-        for row in qwen_rows:
-            plt.annotate(
-                short_model_label(row["model_name"]),
-                (row["mean_latency_seconds"], row[y_key]),
-                xytext=(5, -10),
+                xytext=offset,
                 textcoords="offset points",
             )
 
     plt.xlabel("Mean inference latency (seconds/example)")
     plt.ylabel(y_label)
     plt.title(f"Performance-cost trade-off: {y_label}")
+    plt.legend()
+    plt.tight_layout()
+
+    PLOTS_DIR.mkdir(parents=True, exist_ok=True)
+    plt.savefig(PLOTS_DIR / output_name, dpi=300, bbox_inches="tight")
+    plt.close()
+
+def make_combined_size_plot(
+    rows: list[dict],
+    y_key: str,
+    y_label: str,
+    output_name: str,
+) -> None:
+    valid_rows = [
+        row for row in rows
+        if row["parameter_count"] is not None and row[y_key] is not None
+    ]
+
+    if not valid_rows:
+        return
+
+    bucket_specs = [
+        ("flan", "FLAN", (5, 5)),
+        ("deberta_cross_encoder", "DeBERTa (cross-encoder)", (5, -10)),
+        ("deberta_other_nli", "DeBERTa (other NLI)", (5, 10)),
+        ("qwen", "Qwen", (5, -10)),
+        ("gemma", "Gemma", (5, 5)),
+    ]
+
+    plt.figure(figsize=(9, 6))
+
+    for bucket, legend_label, offset in bucket_specs:
+        bucket_rows = sorted(
+            [row for row in valid_rows if row["comparison_bucket"] == bucket],
+            key=lambda x: x["parameter_count"] if x["parameter_count"] is not None else float("inf"),
+        )
+
+        if not bucket_rows:
+            continue
+
+        x = [row["parameter_count"] for row in bucket_rows]
+        y = [row[y_key] for row in bucket_rows]
+        plt.plot(x, y, marker="o", label=legend_label)
+
+        for row in bucket_rows:
+            plt.annotate(
+                short_model_label(row["model_name"]),
+                (row["parameter_count"], row[y_key]),
+                xytext=offset,
+                textcoords="offset points",
+            )
+
+    plt.xscale("log")
+    plt.xlabel("Parameter count (log scale)")
+    plt.ylabel(y_label)
+    plt.title(f"Model size vs {y_label}")
     plt.legend()
     plt.tight_layout()
 
@@ -178,73 +260,119 @@ def main() -> None:
         print("No metadata files found.")
         return
 
-    # FLAN-only plots
+    # FLAN
     make_family_plot(
         rows=rows,
-        family="flan",
+        bucket="flan",
         y_key="agnostic_acc",
         y_label="Agnostic accuracy",
         output_name="flan_size_vs_accuracy.png",
     )
     make_family_plot(
         rows=rows,
-        family="flan",
+        bucket="flan",
         y_key="agnostic_rho",
         y_label="Agnostic Spearman rho",
         output_name="flan_size_vs_rho.png",
     )
     make_family_plot(
         rows=rows,
-        family="flan",
+        bucket="flan",
         y_key="mean_latency_seconds",
         y_label="Mean inference latency (seconds/example)",
         output_name="flan_size_vs_latency.png",
     )
 
-    # DeBERTa-only plots
+    # DeBERTa cross-encoder
     make_family_plot(
         rows=rows,
-        family="deberta",
+        bucket="deberta_cross_encoder",
         y_key="agnostic_acc",
         y_label="Agnostic accuracy",
-        output_name="deberta_size_vs_accuracy.png",
+        output_name="deberta_cross_encoder_size_vs_accuracy.png",
     )
     make_family_plot(
         rows=rows,
-        family="deberta",
+        bucket="deberta_cross_encoder",
         y_key="agnostic_rho",
         y_label="Agnostic Spearman rho",
-        output_name="deberta_size_vs_rho.png",
+        output_name="deberta_cross_encoder_size_vs_rho.png",
     )
     make_family_plot(
         rows=rows,
-        family="deberta",
+        bucket="deberta_cross_encoder",
         y_key="mean_latency_seconds",
         y_label="Mean inference latency (seconds/example)",
-        output_name="deberta_size_vs_latency.png",
+        output_name="deberta_cross_encoder_size_vs_latency.png",
     )
 
-    # Qwen-only plots
+    # DeBERTa other NLI variants
     make_family_plot(
         rows=rows,
-        family="qwen",
+        bucket="deberta_other_nli",
+        y_key="agnostic_acc",
+        y_label="Agnostic accuracy",
+        output_name="deberta_other_nli_size_vs_accuracy.png",
+    )
+    make_family_plot(
+        rows=rows,
+        bucket="deberta_other_nli",
+        y_key="agnostic_rho",
+        y_label="Agnostic Spearman rho",
+        output_name="deberta_other_nli_size_vs_rho.png",
+    )
+    make_family_plot(
+        rows=rows,
+        bucket="deberta_other_nli",
+        y_key="mean_latency_seconds",
+        y_label="Mean inference latency (seconds/example)",
+        output_name="deberta_other_nli_size_vs_latency.png",
+    )
+
+    # Qwen
+    make_family_plot(
+        rows=rows,
+        bucket="qwen",
         y_key="agnostic_acc",
         y_label="Agnostic accuracy",
         output_name="qwen_size_vs_accuracy.png",
     )
     make_family_plot(
         rows=rows,
-        family="qwen",
+        bucket="qwen",
         y_key="agnostic_rho",
         y_label="Agnostic Spearman rho",
         output_name="qwen_size_vs_rho.png",
     )
     make_family_plot(
         rows=rows,
-        family="qwen",
+        bucket="qwen",
         y_key="mean_latency_seconds",
         y_label="Mean inference latency (seconds/example)",
         output_name="qwen_size_vs_latency.png",
+    )
+
+    # Gemma
+    make_family_plot(
+        rows=rows,
+        bucket="gemma",
+        y_key="agnostic_acc",
+        y_label="Agnostic accuracy",
+        output_name="gemma_size_vs_accuracy.png",
+    )
+    make_family_plot(
+        rows=rows,
+        bucket="gemma",
+        y_key="agnostic_rho",
+        y_label="Agnostic Spearman rho",
+        output_name="gemma_size_vs_rho.png",
+    )
+    make_family_plot(
+        rows=rows,
+        bucket="gemma",
+        y_key="mean_latency_seconds",
+        y_label="Mean inference latency (seconds/example)",
+        output_name="gemma_size_vs_latency.png",
     )
 
     # Combined trade-off plots
@@ -259,6 +387,20 @@ def main() -> None:
         y_key="agnostic_rho",
         y_label="Agnostic Spearman rho",
         output_name="tradeoff_latency_vs_rho.png",
+    )
+
+    # Combined size plots
+    make_combined_size_plot(
+        rows=rows,
+        y_key="agnostic_acc",
+        y_label="Agnostic accuracy",
+        output_name="combined_size_vs_accuracy.png",
+    )
+    make_combined_size_plot(
+        rows=rows,
+        y_key="agnostic_rho",
+        y_label="Agnostic Spearman rho",
+        output_name="combined_size_vs_rho.png",
     )
 
     print(f"Saved plots to: {PLOTS_DIR}")
