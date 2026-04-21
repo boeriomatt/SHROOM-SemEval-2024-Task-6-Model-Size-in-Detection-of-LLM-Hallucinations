@@ -84,8 +84,7 @@ Currently implemented:
 - Qwen2.5 and Gemma 3 decoder-only instruction-tuned LLM judges
 
 Planned / in progress:
-- fine-tuned checkpoints
-- broader scaling comparisons across architectures
+- Fine-tuned checkpoints
 
 Notes:
 - Model outputs are intended to be deterministic under fixed seeds and greedy decoding.

@@ -32,7 +32,7 @@ class GemmaJudge:
         self.reserve_answer_tokens = reserve_answer_tokens
         self.attn_implementation = attn_implementation
 
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = "cpu" # Manually set device to CPU to avoid GPU usage, even if a GPU is available
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         if self.tokenizer.pad_token is None:

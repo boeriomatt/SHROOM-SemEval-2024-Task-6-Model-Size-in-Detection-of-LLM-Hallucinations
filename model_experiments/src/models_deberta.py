@@ -17,7 +17,7 @@ class DebertaJudge:
     ) -> None:
         self.model_name = model_name
         self.max_input_length = max_input_length
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = "cpu" # Manually set device to CPU to avoid GPU usage, even if a GPU is available
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
