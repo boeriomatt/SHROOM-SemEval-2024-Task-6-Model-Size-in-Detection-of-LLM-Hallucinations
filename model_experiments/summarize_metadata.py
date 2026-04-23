@@ -10,6 +10,8 @@ OUTPUT_CSV = Path("outputs/summary_table.csv")
 OUTPUT_MD = Path("outputs/summary_table.md")
 OUTPUT_STATS_JSON = Path("outputs/family_significance.json")
 OUTPUT_STATS_MD = Path("outputs/family_significance.md")
+OUTPUT_COMBINED_CSV = Path("outputs/combined_summary_significance.csv")
+OUTPUT_COMBINED_MD = Path("outputs/combined_summary_significance.md")
 
 def format_params(n: int | None) -> str:
     if n is None:
@@ -338,6 +340,49 @@ def compute_family_significance(rows: list[dict]) -> list[dict]:
 
     return results
 
+def build_combined_rows(rows: list[dict], sig_results: list[dict]) -> list[dict]:
+    sig_by_current: dict[tuple[str, str], dict] = {}
+
+    for sig in sig_results:
+        key = (sig["comparison_bucket"], sig["current_model"])
+        sig_by_current[key] = sig
+
+    combined = []
+    for row in rows:
+        key = (row["comparison_bucket"], row["model_name"])
+        sig = sig_by_current.get(key)
+
+        acc_p_value = sig["accuracy_significance"]["p_value"] if sig else None
+        rho_p_value = sig["rho_significance"]["p_value_approx"] if sig else None
+
+        combined.append(
+            {
+                "family": row["family"],
+                "comparison_bucket": row["comparison_bucket"],
+                "bucket_label": format_bucket_label(row["comparison_bucket"]),
+                "model_name": row["model_name"],
+                "previous_model": sig["previous_model"] if sig else "",
+                "parameter_count": row["parameter_count"],
+                "parameter_count_readable": row["parameter_count_readable"],
+                "agnostic_acc": row["agnostic_acc"],
+                "agnostic_rho": row["agnostic_rho"],
+                "mean_latency_seconds": row["mean_latency_seconds"],
+                "total_runtime_seconds": row["total_runtime_seconds"],
+                "acc_gain_vs_prev_family": row.get("acc_gain_vs_prev_family"),
+                "rho_gain_vs_prev_family": row.get("rho_gain_vs_prev_family"),
+                "latency_multiplier_vs_prev_family": row.get("latency_multiplier_vs_prev_family"),
+                "params_multiplier_vs_prev_family": row.get("params_multiplier_vs_prev_family"),
+                "acc_p_value": acc_p_value,
+                "rho_p_value": rho_p_value,
+                "rho_ci_lower": sig["rho_significance"]["ci_lower"] if sig else None,
+                "rho_ci_upper": sig["rho_significance"]["ci_upper"] if sig else None,
+                "acc_sig_flag": "*" if acc_p_value is not None and acc_p_value < 0.05 else "",
+                "rho_sig_flag": "*" if rho_p_value is not None and rho_p_value < 0.05 else "",
+            }
+        )
+
+    return combined
+
 def write_csv(rows: list[dict], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -391,6 +436,90 @@ def write_markdown(rows: list[dict], output_path: Path) -> None:
                 f'{format_float(row["mean_latency_seconds"])} | '
                 f'{format_signed(row["acc_gain_vs_prev_family"])} | '
                 f'{format_signed(row["rho_gain_vs_prev_family"])} | '
+                f'{format_multiplier(row["latency_multiplier_vs_prev_family"])} | '
+                f'{format_multiplier(row["params_multiplier_vs_prev_family"])} |'
+            )
+
+        lines.append("")
+
+    with output_path.open("w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+def write_combined_csv(rows: list[dict], output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    fieldnames = [
+        "family",
+        "comparison_bucket",
+        "bucket_label",
+        "model_name",
+        "previous_model",
+        "parameter_count",
+        "parameter_count_readable",
+        "agnostic_acc",
+        "agnostic_rho",
+        "mean_latency_seconds",
+        "total_runtime_seconds",
+        "acc_gain_vs_prev_family",
+        "acc_p_value",
+        "acc_sig_flag",
+        "rho_gain_vs_prev_family",
+        "rho_p_value",
+        "rho_sig_flag",
+        "rho_ci_lower",
+        "rho_ci_upper",
+        "latency_multiplier_vs_prev_family",
+        "params_multiplier_vs_prev_family",
+    ]
+
+    with output_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+def write_combined_markdown(rows: list[dict], output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    family_groups: dict[str, list[dict]] = {}
+    for row in rows:
+        family_groups.setdefault(row["family"], []).append(row)
+
+    lines = ["# Combined Summary + Significance", ""]
+    lines.append("Shows per-model summary metrics together with significance vs the previous model in the same comparison bucket.")
+    lines.append("Accuracy significance is based on McNemar's exact test.")
+    lines.append("Rho significance is based on a paired bootstrap over examples.")
+    lines.append("`*` marks p < 0.05.")
+    lines.append("")
+
+    for family, family_rows in family_groups.items():
+        lines.append(f"## {family.capitalize()}")
+        lines.append("")
+        lines.append(
+            "| Model | Prev model | Bucket | Params | Acc | ΔAcc | Acc p | Sig | Rho | ΔRho | Rho p | Sig | 95% CI ΔRho | Latency (s) | Lat x prev | Params x prev |"
+        )
+        lines.append("|---|---|---|---:|---:|---:|---:|:--:|---:|---:|---:|:--:|---|---:|---:|---:|")
+
+        for row in family_rows:
+            ci_str = ""
+            if row["rho_ci_lower"] is not None and row["rho_ci_upper"] is not None:
+                ci_str = f'[{row["rho_ci_lower"]:.3f}, {row["rho_ci_upper"]:.3f}]'
+
+            lines.append(
+                "| "
+                f'{row["model_name"]} | '
+                f'{row["previous_model"]} | '
+                f'{row["bucket_label"]} | '
+                f'{row["parameter_count_readable"]} | '
+                f'{format_float(row["agnostic_acc"])} | '
+                f'{format_signed(row["acc_gain_vs_prev_family"])} | '
+                f'{format_p(row["acc_p_value"])} | '
+                f'{row["acc_sig_flag"]} | '
+                f'{format_float(row["agnostic_rho"])} | '
+                f'{format_signed(row["rho_gain_vs_prev_family"])} | '
+                f'{format_p(row["rho_p_value"])} | '
+                f'{row["rho_sig_flag"]} | '
+                f'{ci_str} | '
+                f'{format_float(row["mean_latency_seconds"])} | '
                 f'{format_multiplier(row["latency_multiplier_vs_prev_family"])} | '
                 f'{format_multiplier(row["params_multiplier_vs_prev_family"])} |'
             )
@@ -536,10 +665,16 @@ def main() -> None:
     write_significance_outputs(sig_results, OUTPUT_STATS_JSON, OUTPUT_STATS_MD)
     print_significance_tables(sig_results)
 
+    combined_rows = build_combined_rows(rows, sig_results)
+    write_combined_csv(combined_rows, OUTPUT_COMBINED_CSV)
+    write_combined_markdown(combined_rows, OUTPUT_COMBINED_MD)
+
     print(f"\nSaved CSV summary to: {OUTPUT_CSV}")
     print(f"Saved Markdown summary to: {OUTPUT_MD}")
     print(f"Saved significance JSON to: {OUTPUT_STATS_JSON}")
     print(f"Saved significance Markdown to: {OUTPUT_STATS_MD}")
+    print(f"Saved combined CSV to: {OUTPUT_COMBINED_CSV}")
+    print(f"Saved combined Markdown to: {OUTPUT_COMBINED_MD}")
 
 if __name__ == "__main__":
     main()
