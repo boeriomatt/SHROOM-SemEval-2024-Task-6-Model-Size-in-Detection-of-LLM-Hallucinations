@@ -10,6 +10,8 @@
 # Experiment data folders
 /model_experiments/data/
 /model_experiments/data/*
+/model_experiments_colab/data/
+/model_experiments_colab/data/*
 
 # Generated experiment outputs
 /model_experiments/outputs/
@@ -18,6 +20,13 @@
 !/model_experiments/outputs/metadata/.gitkeep
 !/model_experiments/outputs/predictions/.gitkeep
 !/model_experiments/outputs/scores/.gitkeep
+
+/model_experiments_colab/outputs/
+/model_experiments_colab/outputs/*
+!/model_experiments_colab/outputs/.gitkeep
+!/model_experiments_colab/outputs/metadata/.gitkeep
+!/model_experiments_colab/outputs/predictions/.gitkeep
+!/model_experiments_colab/outputs/scores/.gitkeep
 
 # Large spreadsheet files
 *.xlsx
