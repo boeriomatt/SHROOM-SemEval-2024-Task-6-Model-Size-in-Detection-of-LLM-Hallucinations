@@ -12,6 +12,10 @@
 /model_experiments/data/*
 /model_experiments_colab/data/
 /model_experiments_colab/data/*
+/test_set_scores_finetuned/data/
+/test_set_scores_finetuned/data/*
+/test_set_scores_OOTB/data/
+/test_set_scores_OOTB/data/*
 
 # Generated experiment outputs
 /model_experiments/outputs/
@@ -20,6 +24,20 @@
 !/model_experiments/outputs/metadata/.gitkeep
 !/model_experiments/outputs/predictions/.gitkeep
 !/model_experiments/outputs/scores/.gitkeep
+
+/test_set_scores_finetuned/outputs/
+/test_set_scores_finetuned/outputs/*
+!/test_set_scores_finetuned/outputs/.gitkeep
+!/test_set_scores_finetuned/outputs/metadata/.gitkeep
+!/test_set_scores_finetuned/outputs/predictions/.gitkeep
+!/test_set_scores_finetuned/outputs/scores/.gitkeep
+
+/test_set_scores_OOTB/outputs/
+/test_set_scores_OOTB/outputs/*
+!/test_set_scores_OOTB/outputs/.gitkeep
+!/test_set_scores_OOTB/outputs/metadata/.gitkeep
+!/test_set_scores_OOTB/outputs/predictions/.gitkeep
+!/test_set_scores_OOTB/outputs/scores/.gitkeep
 
 /model_experiments_colab/outputs/
 /model_experiments_colab/outputs/*
