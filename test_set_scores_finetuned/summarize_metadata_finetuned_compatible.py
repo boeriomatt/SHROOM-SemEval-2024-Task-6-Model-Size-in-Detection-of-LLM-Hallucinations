@@ -82,6 +82,8 @@ def format_bucket_label(bucket: str) -> str:
         "qwen": "main",
         "deberta_cross_encoder": "cross-encoder",
         "deberta_other_nli": "other-nli",
+        "deberta_finetuned_cross_encoder": "cross-encoder-ft",
+        "deberta_finetuned_other_nli": "other-nli-ft",
     }
     return mapping.get(bucket, bucket)
 
@@ -179,12 +181,19 @@ def normalize_metadata_schema(data: dict) -> dict:
         if split_mode == "separate_eval_path" or normalized.get("final_eval_only"):
             normalized["input_path"] = normalized.get("eval_path")
 
-    # Keep fine-tuned DeBERTa as its own bucket rather than mixing with OOTB
-    # DeBERTa. This lets scaling/significance be computed across fine-tuned rungs.
-    model_type = normalized.get("model_type", "") or ""
+    # Keep fine-tuned DeBERTa separate from OOTB DeBERTa, and also keep the
+    # controlled cross-encoder ladder separate from supplementary other-NLI
+    # checkpoints such as sileod and MoritzLaurer.
+    model_type = (normalized.get("model_type", "") or "").lower()
+    model_name_lower = (normalized.get("model_name", "") or "").lower()
+
     if model_type.startswith("deberta_finetuned"):
-        normalized["family_override"] = model_type
-        normalized["comparison_bucket_override"] = model_type
+        if model_name_lower.startswith("cross-encoder/nli-deberta-v3-"):
+            normalized["family_override"] = "deberta_finetuned_cross_encoder"
+            normalized["comparison_bucket_override"] = "deberta_finetuned_cross_encoder"
+        else:
+            normalized["family_override"] = "deberta_finetuned_other_nli"
+            normalized["comparison_bucket_override"] = "deberta_finetuned_other_nli"
 
     return normalized
 
