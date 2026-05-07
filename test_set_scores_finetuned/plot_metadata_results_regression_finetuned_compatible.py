@@ -42,6 +42,17 @@ def _is_finetuned_deberta(model_type: str) -> bool:
     }
 
 
+def _is_finetuned_flan_lora(model_type: str) -> bool:
+    model_type_lower = (model_type or "").lower()
+    return model_type_lower in {
+        "flan_lora_finetuned_seq2seq_verbalizer",
+        "finetuned_flan_lora",
+        "flan_lora_finetuned",
+        "flan_lora_ft",
+        "flan_finetuned_lora",
+    }
+
+
 def extract_model_type_and_name(data: dict[str, Any]) -> tuple[str, str]:
     """
     Normalize model identity across OOTB and fine-tuned metadata schemas.
@@ -131,6 +142,9 @@ def infer_family(model_type: str, model_name: str) -> str:
 
     if _is_finetuned_deberta(model_type):
         return "deberta_finetuned"
+    
+    if _is_finetuned_flan_lora(model_type):
+        return "flan_lora_finetuned"
 
     if model_type == "flan" or "flan-t5" in model_name_lower:
         return "flan"
@@ -157,6 +171,9 @@ def infer_comparison_bucket(model_type: str, model_name: str) -> str:
         if model_name_lower.startswith("cross-encoder/nli-deberta-v3-"):
             return "deberta_finetuned_cross_encoder"
         return "deberta_finetuned_other_nli"
+    
+    if _is_finetuned_flan_lora(model_type):
+        return "flan_lora_finetuned"
 
     if model_type == "flan" or "flan-t5" in model_name_lower:
         return "flan"
@@ -184,6 +201,7 @@ def bucket_title(bucket: str) -> str:
         "deberta_other_nli": "DeBERTa NLI variants OOTB",
         "deberta_finetuned_cross_encoder": "DeBERTa cross-encoder fine-tuned",
         "deberta_finetuned_other_nli": "DeBERTa NLI variants fine-tuned",
+        "flan_lora_finetuned": "FLAN LoRA fine-tuned",
     }
     return mapping.get(bucket, bucket.replace("_", " ").title())
 
@@ -206,6 +224,9 @@ def short_model_label(model_name: str) -> str:
 
     if "flan-t5-" in name:
         return name.split("flan-t5-")[-1]
+    
+    if "flan-lora-finetuned" in name:
+        return name.split("flan-lora-finetuned")[-1].lstrip("-").replace("-seq2seq-verbalizer", "")
 
     if "cross-encoder/nli-deberta-v3-" in name:
         return name.split("cross-encoder/nli-deberta-v3-")[-1]
@@ -339,6 +360,10 @@ COMBINED_LABEL_OFFSETS: dict[tuple[str, str], tuple[int, int]] = {
     ("flan", "base"): (6, 7),
     ("flan", "large"): (6, 7),
     ("flan", "xl"): (6, 7),
+    ("flan_lora_finetuned", "small"): (6, -14),
+    ("flan_lora_finetuned", "base"): (6, 8),
+    ("flan_lora_finetuned", "large"): (6, 8),
+    ("flan_lora_finetuned", "xl"): (6, 8),
     ("deberta_cross_encoder", "xsmall"): (6, -12),
     ("deberta_cross_encoder", "small"): (6, -15),
     ("deberta_cross_encoder", "base"): (6, 6),
@@ -485,6 +510,7 @@ def get_bucket_specs(include_finetuned: bool = INCLUDE_FINETUNED_IN_COMBINED) ->
     ]
     if include_finetuned:
         bucket_specs.extend([
+            ("flan_lora_finetuned", "FLAN LoRA fine-tuned", (6, 6)),
             ("deberta_finetuned_cross_encoder", "DeBERTa CE fine-tuned", (6, 12)),
             ("deberta_finetuned_other_nli", "DeBERTa other NLI fine-tuned", (6, 14)),
         ])
@@ -611,8 +637,8 @@ def write_plot_captions() -> None:
         "example. Dashed lines show family-wise or adaptation-condition-wise least-squares regressions fitted over "
         "latency. These lines summarize observed trade-offs and should not be "
         "interpreted as causal estimates.\n\n"
-        "- **Fine-tuned DeBERTa:** Fine-tuned DeBERTa rows are plotted as a separate "
-        "adaptation condition from OOTB DeBERTa, even when they share the same base checkpoint family.\n",
+        "- **Fine-tuned adaptation buckets:** Fine-tuned DeBERTa and FLAN LoRA rows are plotted as separate "
+        "adaptation conditions from their OOTB counterparts, even when they share the same base checkpoint family.\n",
         encoding="utf-8",
     )
 
@@ -620,6 +646,7 @@ def write_plot_captions() -> None:
 def make_all_family_plots(rows: list[dict[str, Any]]) -> None:
     family_plot_specs = [
         ("flan", "flan"),
+        ("flan_lora_finetuned", "flan_lora_finetuned"),
         ("deberta_cross_encoder", "deberta_cross_encoder"),
         ("deberta_other_nli", "deberta_other_nli"),
         ("deberta_finetuned_cross_encoder", "deberta_finetuned_cross_encoder"),
