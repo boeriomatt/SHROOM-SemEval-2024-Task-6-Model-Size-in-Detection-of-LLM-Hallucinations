@@ -20,6 +20,8 @@
 /test_set_scores_OOTB - A100 GPU/data/*
 /test_set_scores_finetuned - A100 GPU/data/
 /test_set_scores_finetuned - A100 GPU/data/*
+/test_set_scores_all - A100 GPU/data/
+/test_set_scores_all - A100 GPU/data/*
 
 # Generated experiment outputs
 /model_experiments/outputs/
@@ -56,6 +58,13 @@
 !/test_set_scores_finetuned - A100 GPU/outputs/metadata/.gitkeep
 !/test_set_scores_finetuned - A100 GPU/outputs/predictions/.gitkeep
 !/test_set_scores_finetuned - A100 GPU/outputs/scores/.gitkeep
+
+/test_set_scores_all - A100 GPU/outputs/
+/test_set_scores_all - A100 GPU/outputs/*
+!/test_set_scores_all - A100 GPU/outputs/.gitkeep
+!/test_set_scores_all - A100 GPU/outputs/metadata/.gitkeep
+!/test_set_scores_all - A100 GPU/outputs/predictions/.gitkeep
+!/test_set_scores_all - A100 GPU/outputs/scores/.gitkeep
 
 /model_experiments_colab/outputs/
 /model_experiments_colab/outputs/*
