@@ -2,6 +2,9 @@
 # Project-specific
 # =========================
 
+# Archive (old):
+/archive (old)/
+
 # Root data folder
 /data/
 /data/*
@@ -12,6 +15,8 @@
 /model_experiments/data/*
 /model_experiments_colab/data/
 /model_experiments_colab/data/*
+/model_experiments_colab/archive (old)/
+/model_experiments_colab/archive (old)/*
 /test_set_scores_finetuned/data/
 /test_set_scores_finetuned/data/*
 /test_set_scores_OOTB/data/

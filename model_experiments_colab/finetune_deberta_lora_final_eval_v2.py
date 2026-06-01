@@ -1,3 +1,5 @@
+# For colab_vscode_deberta_lora_finetune_test_runner_v2.ipynb
+
 """
 Final test-set fine-tune/evaluate DeBERTa-style cross-encoder hallucination judges on SHROOM with LoRA.
 

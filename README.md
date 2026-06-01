@@ -1,92 +1,179 @@
-# SHROOM SemEval 2024 Task 6: Model Size in Detection of LLM Hallucinations
-This repository contains experiments for evaluating how model size affects hallucination detection performance on the **SHROOM SemEval 2024 Task 6** benchmark. The project focuses on comparing out-of-the-box and, later, fine-tuned language models on the task of identifying whether a generated sentence is semantically supported by a given context.
+# SHROOM SemEval 2024 Task 6: Model Size in Hallucination Detection
 
-For each record, the current implementation predicts:
-- a binary label: `Hallucination` or `Not Hallucination`
-- a soft score: `p(Hallucination)`
+This repository contains scripts and notebooks for studying how model size affects hallucination detection on the SHROOM SemEval 2024 Task 6 benchmark. The experiments compare out-of-the-box inference and LoRA fine-tuning for FLAN-T5, DeBERTa, Qwen, and Gemma model families.
 
-The project also records computational cost measurements for each model run, including:
-- total parameter count
-- mean inference latency per example
+Each prediction contains:
 
-## Project structure (for Model Experiements)
+- `label`: `Hallucination` or `Not Hallucination`
+- `p(Hallucination)`: a soft hallucination score
+
+Generated datasets, checkpoints, predictions, scores, plots, and virtual environments are intentionally ignored by git. The README describes the files that are part of the current repository, plus the local ignored folders those scripts expect.
+
+## Repository Structure
+
 ```text
-model_experiments/
-├── data/                     # Local SHROOM datasets (ignored by git)
-│   ├── SHROOM_dev-v2/
-│   ├── SHROOM_test-labeled/
-│   └── SHROOM_trial-v1.1/
-├── outputs/                  # Generated predictions, scores, metadata, plots
-│   ├── metadata/
-|   ├── plots/
-│   ├── predictions/
-│   └── scores/
-├── participant_kit/          # Official evaluation scripts
-├── src/
-│   ├── data.py
-│   ├── models_deberta.py
-│   ├── models_flan.py
-│   ├── models_gemma.py
-│   ├── models_qwen.py
-│   └── prompts.py
-├── run_experiment.py         # Main experiment runner
-├── requirements.txt
-└── README.md
+.
+|-- README.md
+|-- requirements.txt
+|-- data/
+|   `-- README.md
+|-- EDA/
+|   `-- Exploratory Data Analysis.ipynb
+|-- model_experiments_colab/
+|   |-- colab_vscode_*_runner.ipynb
+|   |-- run_experiment.py
+|   |-- run_experiment_ootb_eval.py
+|   |-- finetune_*_lora*.py
+|   |-- participant_kit/
+|   |   |-- check_output.py
+|   |   `-- score.py
+|   `-- src/
+|       |-- data.py
+|       |-- models_deberta.py
+|       |-- models_flan.py
+|       |-- models_gemma.py
+|       |-- models_qwen.py
+|       `-- prompts.py
+|-- test_set_scores_OOTB - A100 GPU/
+|-- test_set_scores_finetuned - A100 GPU/
+`-- test_set_scores_all - A100 GPU/
 ```
 
-## Setup and Execution
-Create and activate a virtual environment, then install dependencies:
-- python -m venv .venv
-- .venv\Scripts\Activate.ps1
-- python -m pip install -r requirements.txt
+Folder contents:
 
-Place the SHROOM data folders inside:
-- model_experiments/data/
+- `data/`: tracked placeholder only. Put local SHROOM data here if useful for manual work; dataset files are ignored.
+- `EDA/`: exploratory notebook for inspecting the SHROOM data.
+- `model_experiments_colab/`: main experiment code. It contains Colab/VS Code runner notebooks, out-of-the-box evaluation scripts, LoRA fine-tuning scripts, model wrappers, prompt/data helpers, and the SHROOM participant-kit scoring scripts.
+- `model_experiments_colab/src/`: shared Python helpers used by the experiment runners.
+- `model_experiments_colab/participant_kit/`: official-style output validation and scoring scripts.
+- `test_set_scores_OOTB - A100 GPU/`: summary and plotting scripts for out-of-the-box A100 test-set runs.
+- `test_set_scores_finetuned - A100 GPU/`: summary and plotting scripts for fine-tuned A100 test-set runs.
+- `test_set_scores_all - A100 GPU/`: combined summary, plotting, confusion-matrix, and OOTB-vs-fine-tuned comparison scripts.
 
-Expected structure:
-- model_experiments/data/SHROOM_dev-v2/
-- model_experiments/data/SHROOM_test-labeled/
-- model_experiments/data/SHROOM_trial-v1.1/
+The following local folders are expected during experiments but are ignored by git: `data/`, `model_experiments_colab/data/`, `model_experiments_colab/outputs/`, and matching `data/` / `outputs/` folders inside the `test_set_scores_* - A100 GPU/` directories.
 
-Running an experiment (w/ warmup, to reduce startup-related latency effects):
-Example run with FLAN-T5 Small:
-- python run_experiment.py --model-type flan --model-name google/flan-t5-small --notes "OOTB FLAN-T5 Small"
+## Setup
 
-Outputs:
-Each run produces:
-- predictions: JSON file with model predictions
-- scores: task metrics from the participant kit
-- metadata: run configuration and computational cost information
-Generated files are written under:
-- outputs/predictions/
-- outputs/scores/
-- outputs/metadata/
+From the repository root:
 
-Run python summarize_metadata.py to see table of latest model results
-Run python plot_metadata_results.py to generate plots of model data
-Run python score_by_task.py to see performance on task-based (PG, MT, DM) level
-- CLI example:
-python .\score_by_task.py `
-  .\outputs\predictions\archive\val.model-agnostic__Qwen__Qwen2.5-1.5B-Instruct.json `
-  .\data\SHROOM_dev-v2\val.model-agnostic.json `
-  --output .\outputs\scores\task_scores__Qwen__Qwen2.5-1.5B-Instruct.txt
-Run python confusion_by_task.py to see summarized predicted class proportions and confusion matrix
-- CLI example:
-python .\confusion_by_task.py `
-  .\outputs\predictions\archive\val.model-agnostic__Qwen__Qwen2.5-3B-Instruct.json `
-  .\data\SHROOM_dev-v2\val.model-agnostic.json `
-  --output .\outputs\scores\confusion__Qwen__Qwen2.5-3B-Instruct.txt
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
 
-## Current Progress and Notes
-Currently implemented:
-- FLAN-T5 prompt-based judges
-- DeBERTa-v3 variants encoder-only models
-- Qwen2.5 and Gemma 3 decoder-only instruction-tuned LLM judges
+GPU-backed runs are strongly recommended for the larger models and fine-tuning scripts. Some Hugging Face models, such as Gemma, may require accepting model terms and authenticating with Hugging Face before running.
 
-Planned / in progress:
-- Fine-tuned checkpoints
+## Data Layout
 
-Notes:
-- Model outputs are intended to be deterministic under fixed seeds and greedy decoding.
-- Warmup examples are excluded from reported latency measurements.
-- Data and generated outputs are ignored in Git; only code and supporting files are tracked.
+The active experiment scripts use paths relative to `model_experiments_colab/`. Place the SHROOM files locally as:
+
+```text
+model_experiments_colab/
+`-- data/
+    |-- SHROOM_dev-v2/
+    |   `-- val.model-agnostic.json
+    |-- SHROOM_test-labeled/
+    |   `-- test.model-agnostic.json
+    `-- SHROOM_trial-v1.1/
+        `-- trial-v1.json
+```
+
+These files are ignored by git. The same dataset layout is useful inside the `test_set_scores_* - A100 GPU/` folders when running their local analysis scripts.
+
+## Running Experiments
+
+Run experiment scripts from `model_experiments_colab/` so their relative paths resolve correctly:
+
+```powershell
+cd model_experiments_colab
+```
+
+Out-of-the-box validation example:
+
+```powershell
+python run_experiment.py `
+  --model-type flan `
+  --model-name google/flan-t5-small `
+  --notes "OOTB FLAN-T5 small"
+```
+
+Out-of-the-box test-set example:
+
+```powershell
+python run_experiment_ootb_eval.py `
+  --model-type flan `
+  --model-name google/flan-t5-small `
+  --input-path data/SHROOM_test-labeled/test.model-agnostic.json `
+  --score-split test
+```
+
+Supported `--model-type` values are `flan`, `deberta`, `qwen`, and `gemma`. Outputs are written under ignored local folders:
+
+```text
+model_experiments_colab/outputs/
+|-- metadata/
+|-- predictions/
+|-- scores/
+`-- finetuned/
+```
+
+## Fine-Tuning
+
+Use the LoRA scripts in `model_experiments_colab/` for family-specific fine-tuning:
+
+- `finetune_deberta_lora_v2.py`
+- `finetune_flan_lora.py`
+- `finetune_gemma_lora_v2.py`
+- `finetune_qwen_lora.py`
+
+Smoke-test example:
+
+```powershell
+python finetune_deberta_lora_v2.py `
+  --model-name MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli `
+  --train-limit 32 `
+  --eval-limit 32 `
+  --epochs 1 `
+  --notes "smoke test"
+```
+
+For final test-set evaluation, use the corresponding `*_final_eval*.py` script for the model family. Add `--run-participant-scorer` only when the prediction file covers the full reference split.
+
+## Notebooks
+
+The `model_experiments_colab/colab_vscode_*_runner.ipynb` notebooks are convenience launchers for the same Python scripts. Use them when running in Colab or an interactive GPU notebook environment; keep data and generated outputs in the same ignored folder layout described above.
+
+## Summaries and Plots
+
+The `test_set_scores_* - A100 GPU/` folders contain post-processing scripts. Run them from inside the relevant folder after placing or generating local ignored `outputs/metadata/`, `outputs/predictions/`, and any needed `data/` files.
+
+Examples:
+
+```powershell
+cd "test_set_scores_all - A100 GPU"
+python plot_metadata_results_regression_finetuned_compatible.py
+python summarize_ootb_vs_finetuned_comparisons.py
+python summarize_confusion_matrices.py
+```
+
+For the OOTB-only and fine-tuned-only folders, run:
+
+```powershell
+python summarize_metadata_finetuned_compatible.py
+python plot_metadata_results_regression_finetuned_compatible.py
+```
+
+The summary scripts read metadata from `outputs/metadata/`. The plot scripts write figures to `outputs/plots/`. The combined comparison and confusion-matrix scripts write tables to `outputs/tables/`.
+
+## Scoring Utilities
+
+The participant-kit scripts can be run directly from `model_experiments_colab/`:
+
+```powershell
+python participant_kit/check_output.py outputs/predictions/current --is_val
+python participant_kit/score.py outputs/predictions/current data/SHROOM_dev-v2 outputs/scores/example.txt --is_val
+```
+
+For test-set scoring, omit `--is_val` and point the reference path at `data/SHROOM_test-labeled`.

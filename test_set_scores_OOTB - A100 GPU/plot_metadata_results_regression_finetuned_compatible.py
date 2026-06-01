@@ -24,6 +24,14 @@ INCLUDE_FINETUNED_IN_COMBINED = True
 
 # Supports OOTB-only, fine-tuned-only, or mixed OOTB + fine-tuned metadata.
 
+# Buckets that should be shown as grouped scatter points, but without
+# a fitted regression line. This is useful for heterogeneous DeBERTa NLI
+# checkpoints that are not a clean architecture-controlled scaling ladder.
+NO_REGRESSION_BUCKETS = {
+    "deberta_other_nli",
+    "deberta_lora_finetuned_other_nli",
+}
+
 # Manual defaults for common rung labels. The first map is used for single-family
 # plots; the second can override offsets for specific combined-size plots.
 FAMILY_LABEL_OFFSETS: dict[str, tuple[int, int]] = {
@@ -484,6 +492,7 @@ def add_scatter_and_regression(
     label: str,
     x_transform: str | None = None,
     show_r2_in_legend: bool = True,
+    draw_regression: bool = True,
 ) -> dict[str, Any] | None:
     """Plot a series and return metadata, including its matplotlib color.
 
@@ -498,7 +507,11 @@ def add_scatter_and_regression(
     y = np.array(y_values, dtype=float)
     transform_name = x_transform or "identity"
 
-    fit = _fit_linear_regression(x, y, x_transform=transform_name) if len(x) >= 2 else None
+    fit = (
+        _fit_linear_regression(x, y, x_transform=transform_name)
+        if draw_regression and len(x) >= 2
+        else None
+    )
     legend_label = label
     if fit and show_r2_in_legend:
         legend_label = f"{label} ({_format_r2(fit['r_squared'], fit['n'])})"
@@ -509,7 +522,7 @@ def add_scatter_and_regression(
     facecolors = scatter.get_facecolors()
     series_color = facecolors[0] if len(facecolors) else None
 
-    if fit:
+    if draw_regression and fit:
         plt.plot(fit["x_line"], fit["y_line"], linestyle="--", linewidth=LINE_WIDTH, color=series_color)
 
     return {
@@ -964,7 +977,7 @@ def make_combined_latency_tradeoff_plot(
     ax.margins(x=0.03)
 
     add_caption(
-        "Bars show mean inference latency in seconds/example, grouped by family/adaptation condition and broken out by size rung; "
+        "Bars show mean inference latency in seconds/example, grouped by family/adaptation condition and broken out by size rung;\n"
         "bar annotations report the corresponding accuracy and Spearman rho values when available."
     )
     plt.tight_layout(rect=(0, 0.085, 1, 0.98))
@@ -1070,7 +1083,7 @@ def make_combined_training_time_tradeoff_plot(
     ax.margins(x=0.03)
 
     add_caption(
-        "Bars show total fine-tuning runtime in seconds, grouped by family/adaptation condition and broken out by size rung; "
+        "Bars show total fine-tuning runtime in seconds, grouped by family/adaptation condition and broken out by size rung;\n"
         "bar annotations report the corresponding accuracy and Spearman rho values when available. OOTB rows without training-runtime metadata are skipped."
     )
     plt.tight_layout(rect=(0, 0.085, 1, 0.98))
@@ -1108,7 +1121,14 @@ def make_combined_size_plot(
 
         x = [row["parameter_count"] for row in bucket_rows]
         y = [row[y_key] for row in bucket_rows]
-        series_info = add_scatter_and_regression(x, y, label=legend_label, x_transform="log10")
+        draw_regression = bucket not in NO_REGRESSION_BUCKETS
+        series_info = add_scatter_and_regression(
+            x,
+            y,
+            label=legend_label,
+            x_transform="log10",
+            draw_regression=draw_regression,
+        )
         label_color = series_info.get("color") if series_info else None
 
         for row in bucket_rows:
@@ -1131,7 +1151,8 @@ def make_combined_size_plot(
     plt.title(f"Model size (log scale) vs {metric_title(y_label)}")
     plt.legend(loc="best", fontsize=8, frameon=True)
     add_caption(
-        "Dashed lines show least-squares trend fitted within each family/adaptation condition over log10(parameter count); "
+        "Dashed lines show least-squares trends fitted within eligible family/adaptation conditions over log10(parameter count);\n"
+        "DeBERTa other-NLI variants are shown as grouped points without a fitted regression line because they combine heterogeneous checkpoints.\n"
         "R² is descriptive."
     )
     plt.tight_layout(rect=(0, 0.055, 1, 1))

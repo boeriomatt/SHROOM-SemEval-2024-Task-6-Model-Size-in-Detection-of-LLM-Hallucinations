@@ -1,3 +1,5 @@
+# For colab_vscode_qwen_lora_finetune_runner.ipynb
+
 """
 Fine-tune Qwen-style decoder-only hallucination judges on SHROOM with LoRA.
 

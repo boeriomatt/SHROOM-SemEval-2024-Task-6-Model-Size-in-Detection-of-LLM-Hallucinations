@@ -1,3 +1,5 @@
+# For colab_vscode_flan_lora_finetune_runner.ipynb
+
 """
 Fine-tune FLAN-T5-style seq2seq hallucination judges on SHROOM with LoRA.
 

@@ -1,3 +1,5 @@
+# For colab_vscode_gemma_lora_finetune_runner.ipynb
+
 """
 Fine-tune Gemma-style decoder-only hallucination judges on SHROOM with LoRA.
 
