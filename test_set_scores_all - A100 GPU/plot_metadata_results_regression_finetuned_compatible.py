@@ -32,6 +32,33 @@ NO_REGRESSION_BUCKETS = {
     "deberta_lora_finetuned_other_nli",
 }
 
+# Hard-coded, colorblind-friendly colors for each model family / matched
+# OOTB-vs-fine-tuned comparison bucket. Fine-tuned buckets use the same
+# color as their corresponding OOTB bucket.
+BUCKET_COLORS: dict[str, str] = {
+    "flan": "#1f77b4",
+    "flan_lora_finetuned": "#1f77b4",
+
+    "deberta_cross_encoder": "#ff7f0e",
+    "deberta_lora_finetuned_cross_encoder": "#ff7f0e",
+
+    "deberta_other_nli": "#9467bd",
+    "deberta_lora_finetuned_other_nli": "#9467bd",
+
+    "qwen": "#2ca02c",
+    "qwen_lora_finetuned": "#2ca02c",
+
+    "gemma": "#d62728",
+    "gemma_lora_finetuned": "#d62728",
+}
+
+FALLBACK_BUCKET_COLOR = "#7f7f7f"
+
+
+def color_for_bucket(bucket: str) -> str:
+    """Return the hard-coded plotting color for a comparison bucket."""
+    return BUCKET_COLORS.get(bucket, FALLBACK_BUCKET_COLOR)
+
 # Manual defaults for common rung labels. The first map is used for single-family
 # plots; the second can override offsets for specific combined-size plots.
 FAMILY_LABEL_OFFSETS: dict[str, tuple[int, int]] = {
@@ -493,6 +520,7 @@ def add_scatter_and_regression(
     x_transform: str | None = None,
     show_r2_in_legend: bool = True,
     draw_regression: bool = True,
+    color: Any | None = None,
 ) -> dict[str, Any] | None:
     """Plot a series and return metadata, including its matplotlib color.
 
@@ -518,9 +546,9 @@ def add_scatter_and_regression(
     elif show_r2_in_legend:
         legend_label = f"{label} (n={len(x)})"
 
-    scatter = plt.scatter(x, y, label=legend_label, s=POINT_SIZE)
+    scatter = plt.scatter(x, y, label=legend_label, s=POINT_SIZE, color=color)
     facecolors = scatter.get_facecolors()
-    series_color = facecolors[0] if len(facecolors) else None
+    series_color = color if color is not None else (facecolors[0] if len(facecolors) else None)
 
     if draw_regression and fit:
         plt.plot(fit["x_line"], fit["y_line"], linestyle="--", linewidth=LINE_WIDTH, color=series_color)
@@ -773,6 +801,7 @@ def make_family_plot(
         label=bucket_title(bucket),
         x_transform="log10",
         show_r2_in_legend=True,
+        color=color_for_bucket(bucket),
     )
     label_color = series_info.get("color") if series_info else None
 
@@ -943,6 +972,7 @@ def make_combined_latency_tradeoff_plot(
             latencies,
             width=bar_width,
             label=legend_label,
+            color=color_for_bucket(_bucket),
             alpha=0.92,
             zorder=3,
         )
@@ -1043,6 +1073,7 @@ def make_combined_training_time_tradeoff_plot(
             runtimes,
             width=bar_width,
             label=legend_label,
+            color=color_for_bucket(_bucket),
             alpha=0.92,
             zorder=3,
         )
@@ -1128,6 +1159,7 @@ def make_combined_size_plot(
             label=legend_label,
             x_transform="log10",
             draw_regression=draw_regression,
+            color=color_for_bucket(bucket),
         )
         label_color = series_info.get("color") if series_info else None
 
