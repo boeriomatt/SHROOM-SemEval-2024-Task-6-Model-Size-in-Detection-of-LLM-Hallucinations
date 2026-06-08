@@ -1,38 +1,4 @@
-#!/usr/bin/env python3
-"""
-Create OOTB vs. fine-tuned comparison tables from experiment metadata.
-
-Expected project layout, when run from the project root:
-
-    outputs/
-      metadata/
-        *.json
-      tables/                       # created by this script
-
-Outputs:
-    outputs/tables/ootb_vs_finetuned_comparison.csv
-    outputs/tables/ootb_vs_finetuned_comparison.md
-    outputs/tables/ootb_vs_finetuned_family_summary.csv
-    outputs/tables/ootb_vs_finetuned_family_summary.md
-    outputs/tables/normalized_metadata_rows.csv
-
-The pairing logic matches OOTB and fine-tuned rows by:
-    family + subfamily + size_rung
-
-Examples:
-    FLAN + main + base
-    DeBERTa + cross_encoder + small
-    Qwen + main + 1.5b
-    Gemma + main + 4b
-
-Run:
-    python summarize_ootb_vs_finetuned_comparison.py
-
-Optional:
-    python summarize_ootb_vs_finetuned_comparison.py --selection best_rho
-    python summarize_ootb_vs_finetuned_comparison.py --metadata-dir outputs/metadata --output-dir outputs/tables
-"""
-
+# Create OOTB vs. fine-tuned comparison tables from experiment metadata.
 from __future__ import annotations
 
 import argparse
@@ -121,9 +87,10 @@ FAMILY_SUMMARY_FIELDNAMES = [
     "sum_finetuned_training_runtime_seconds",
 ]
 
-
 def as_float(value: Any) -> float | None:
-    """Safely coerce a value to float, preserving None for missing/unusable values."""
+    """
+    Safely coerce a value to float, preserving None for missing/unusable values.
+    """
     if value is None:
         return None
     try:
@@ -134,7 +101,6 @@ def as_float(value: Any) -> float | None:
         return None
     return result
 
-
 def as_int(value: Any) -> int | None:
     if value is None:
         return None
@@ -143,9 +109,10 @@ def as_int(value: Any) -> int | None:
     except (TypeError, ValueError):
         return None
 
-
 def get_nested(data: dict[str, Any], *paths: str) -> Any:
-    """Return the first non-None value found across dot-separated dictionary paths."""
+    """
+    Return the first non-None value found across dot-separated dictionary paths.
+    """
     for path in paths:
         current: Any = data
         found = True
@@ -159,23 +126,22 @@ def get_nested(data: dict[str, Any], *paths: str) -> Any:
             return current
     return None
 
-
 def parse_timestamp(value: Any) -> datetime | None:
     if not value:
         return None
     text = str(value).strip()
     if not text:
         return None
-    # Accept common ISO variants, including trailing Z.
     text = text.replace("Z", "+00:00")
     try:
         return datetime.fromisoformat(text)
     except ValueError:
         return None
 
-
 def is_finetuned_row(data: dict[str, Any], model_type: str, model_name: str, path: Path) -> bool:
-    """Detect whether metadata belongs to a fine-tuned/adapted run."""
+    """
+    Detect whether metadata belongs to a fine-tuned/adapted run.
+    """
     joined = " ".join(
         str(x).lower()
         for x in [
@@ -189,28 +155,23 @@ def is_finetuned_row(data: dict[str, Any], model_type: str, model_name: str, pat
     )
     if any(marker in joined for marker in FINETUNED_MARKERS):
         return True
-    # Many fine-tuning metadata files include final_prediction_metrics even when
-    # participant_scores are also present. This is a fallback, not the main rule.
     if data.get("final_prediction_metrics") and data.get("base_model_name"):
         return True
     return False
 
-
 def extract_model_names(data: dict[str, Any]) -> tuple[str, str, str]:
     """
     Return model_type, model_name, base_model_name.
-
-    For fine-tuned runs, base_model_name is the checkpoint used for pairing.
-    For OOTB runs, base_model_name falls back to model_name.
     """
     model_type = str(data.get("model_type") or "")
     model_name = str(data.get("model_name") or data.get("checkpoint_path") or data.get("safe_model_name") or "")
     base_model_name = str(data.get("base_model_name") or model_name)
     return model_type, model_name, base_model_name
 
-
 def extract_scores(data: dict[str, Any]) -> tuple[float | None, float | None]:
-    """Normalize accuracy and Spearman rho across OOTB and fine-tuned schemas."""
+    """
+    Normalize accuracy and Spearman rho across OOTB and fine-tuned schemas.
+    """
     accuracy = get_nested(
         data,
         "scores.agnostic_acc",
@@ -246,9 +207,10 @@ def extract_scores(data: dict[str, Any]) -> tuple[float | None, float | None]:
     )
     return as_float(accuracy), as_float(rho)
 
-
 def extract_costs(data: dict[str, Any]) -> dict[str, float | None]:
-    """Normalize runtime/size fields across metadata schemas."""
+    """
+    Normalize runtime/size fields across metadata schemas.
+    """
     return {
         "parameter_count": as_float(
             get_nested(
@@ -294,7 +256,6 @@ def extract_costs(data: dict[str, Any]) -> dict[str, float | None]:
         ),
     }
 
-
 def infer_family(model_type: str, base_model_name: str) -> str:
     text = f"{model_type} {base_model_name}".lower()
     if "flan" in text or "t5" in text:
@@ -307,7 +268,6 @@ def infer_family(model_type: str, base_model_name: str) -> str:
         return "gemma"
     return model_type.lower() or "unknown"
 
-
 def infer_subfamily(family: str, base_model_name: str) -> str:
     name = base_model_name.lower()
     if family == "deberta":
@@ -316,9 +276,10 @@ def infer_subfamily(family: str, base_model_name: str) -> str:
         return "other_nli"
     return "main"
 
-
 def short_model_label(base_model_name: str) -> str:
-    """Return compact size/rung label used to pair OOTB and fine-tuned rows."""
+    """
+    Return compact size/rung label used to pair OOTB and fine-tuned rows.
+    """
     name = (base_model_name or "").lower().replace("_", "-")
 
     if "flan-t5-" in name:
@@ -345,8 +306,6 @@ def short_model_label(base_model_name: str) -> str:
     if "gemma-2-" in name and "-it" in name:
         return name.split("gemma-2-")[-1].replace("-it", "")
 
-    # Common fallback for local fine-tuned checkpoint names, if base_model_name
-    # was not stored and only a safe model/checkpoint name is available.
     for marker in [
         "flan-lora-finetuned-",
         "gemma-lora-finetuned-",
@@ -362,7 +321,6 @@ def short_model_label(base_model_name: str) -> str:
             )
 
     return base_model_name.split("/")[-1] if base_model_name else "unknown"
-
 
 def normalize_row(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
@@ -397,7 +355,6 @@ def normalize_row(path: Path) -> dict[str, Any]:
         "metadata_mtime": path.stat().st_mtime,
     }
 
-
 def load_metadata(metadata_dir: Path) -> list[dict[str, Any]]:
     if not metadata_dir.exists():
         raise FileNotFoundError(f"Metadata directory not found: {metadata_dir}")
@@ -410,9 +367,10 @@ def load_metadata(metadata_dir: Path) -> list[dict[str, Any]]:
             print(f"WARNING: skipping {path}: {exc}")
     return rows
 
-
 def sort_key_for_selection(row: dict[str, Any], selection: str) -> tuple[Any, ...]:
-    """Return a key where max(key) is the selected preferred row."""
+    """
+    Return a key where max(key) is the selected preferred row.
+    """
     timestamp = row.get("timestamp_dt") or datetime.min
     mtime = row.get("metadata_mtime") or 0.0
 
@@ -427,12 +385,10 @@ def sort_key_for_selection(row: dict[str, Any], selection: str) -> tuple[Any, ..
         return (-(latency if latency is not None else float("inf")), timestamp, mtime)
     raise ValueError(f"Unsupported selection: {selection}")
 
-
 def select_one_row(rows: list[dict[str, Any]], selection: str) -> dict[str, Any]:
     if len(rows) == 1:
         return rows[0]
     return max(rows, key=lambda row: sort_key_for_selection(row, selection))
-
 
 TEXT_SIZE_ORDER = {
     "xxsmall": 0.0,
@@ -444,20 +400,14 @@ TEXT_SIZE_ORDER = {
     "xxl": 6.0,
 }
 
-
 def size_rung_sort_value(size_rung: Any) -> float:
     """
     Fallback size ordering when parameter_count is missing.
-
-    Prefer real parameter_count whenever it is available. This parser only exists
-    so labels such as xsmall/small/base/large/xl, 270m, 1.5b, or tasksource-base
-    still sort in a reasonable model-size order if a metadata file lacks params.
     """
     label = str(size_rung or "").lower().strip().replace("_", "-")
     if not label:
         return float("inf")
 
-    # Handles labels like 270m, 0.5b, 1.5b, 7b, etc.
     numeric_match = re.search(r"(\d+(?:\.\d+)?)\s*([kmb])\b", label)
     if numeric_match:
         value = float(numeric_match.group(1))
@@ -465,14 +415,11 @@ def size_rung_sort_value(size_rung: Any) -> float:
         multiplier = {"k": 1_000.0, "m": 1_000_000.0, "b": 1_000_000_000.0}[suffix]
         return value * multiplier
 
-    # Handles textual rungs and compound labels such as tasksource-base or
-    # ml-fever-anli-large.
     for token, order in TEXT_SIZE_ORDER.items():
         if token in label:
             return order
 
     return float("inf")
-
 
 def first_numeric(*values: Any) -> float | None:
     for value in values:
@@ -481,14 +428,9 @@ def first_numeric(*values: Any) -> float | None:
             return numeric
     return None
 
-
 def comparison_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
     """
     Sort paired comparison rows by family, subfamily, then actual model size.
-
-    The paired table has both OOTB and fine-tuned parameter counts. OOTB params
-    are the primary key because they reflect the base model size; fine-tuned
-    params are used as a fallback, then the size_rung parser if params are absent.
     """
     size_value = first_numeric(
         row.get("ootb_parameter_count"),
@@ -503,7 +445,6 @@ def comparison_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
         size_value,
         str(row.get("size_rung") or ""),
     )
-
 
 def normalized_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
     """
@@ -524,13 +465,11 @@ def normalized_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
         str(row.get("base_model_name") or ""),
     )
 
-
 def family_summary_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
     return (
         str(row.get("family") or ""),
         str(row.get("subfamily") or ""),
     )
-
 
 def pair_rows(rows: list[dict[str, Any]], selection: str, include_unpaired: bool) -> tuple[list[dict[str, Any]], list[str]]:
     grouped: dict[tuple[str, str, str], dict[str, list[dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
@@ -569,14 +508,12 @@ def pair_rows(rows: list[dict[str, Any]], selection: str, include_unpaired: bool
     comparison_rows.sort(key=comparison_sort_key)
     return comparison_rows, warnings
 
-
 def delta(ft_value: Any, ootb_value: Any) -> float | None:
     ft = as_float(ft_value)
     ootb = as_float(ootb_value)
     if ft is None or ootb is None:
         return None
     return ft - ootb
-
 
 def pct_delta(ft_value: Any, ootb_value: Any) -> float | None:
     ft = as_float(ft_value)
@@ -585,14 +522,12 @@ def pct_delta(ft_value: Any, ootb_value: Any) -> float | None:
         return None
     return (ft - ootb) / abs(ootb) * 100.0
 
-
 def ratio(numerator: Any, denominator: Any) -> float | None:
     num = as_float(numerator)
     den = as_float(denominator)
     if num is None or den is None or den == 0:
         return None
     return num / den
-
 
 def build_comparison_row(
     family: str,
@@ -644,14 +579,12 @@ def build_comparison_row(
         "finetuned_num_examples": ft.get("num_examples") if ft else None,
     }
 
-
 def mean(values: Iterable[Any]) -> float | None:
     numeric = [as_float(value) for value in values]
     numeric = [value for value in numeric if value is not None]
     if not numeric:
         return None
     return sum(numeric) / len(numeric)
-
 
 def total(values: Iterable[Any]) -> float | None:
     numeric = [as_float(value) for value in values]
@@ -660,12 +593,9 @@ def total(values: Iterable[Any]) -> float | None:
         return None
     return sum(numeric)
 
-
 def make_family_summary(comparison_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in comparison_rows:
-        # Keep this family summary strictly paired, so missing/unpaired rows do not
-        # distort mean deltas.
         if not row.get("ootb_metadata_file") or not row.get("finetuned_metadata_file"):
             continue
         grouped[(row["family"], row["subfamily"])].append(row)
@@ -691,7 +621,6 @@ def make_family_summary(comparison_rows: list[dict[str, Any]]) -> list[dict[str,
         )
     return summary_rows
 
-
 def format_value(value: Any, digits: int = 4) -> str:
     if value is None or value == "":
         return ""
@@ -700,7 +629,6 @@ def format_value(value: Any, digits: int = 4) -> str:
             return ""
         return f"{value:.{digits}f}"
     return str(value)
-
 
 def cleaned_for_csv(row: dict[str, Any], fieldnames: list[str]) -> dict[str, Any]:
     cleaned: dict[str, Any] = {}
@@ -714,7 +642,6 @@ def cleaned_for_csv(row: dict[str, Any], fieldnames: list[str]) -> dict[str, Any
             cleaned[field] = value
     return cleaned
 
-
 def write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as f:
@@ -722,7 +649,6 @@ def write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> 
         writer.writeheader()
         for row in rows:
             writer.writerow(cleaned_for_csv(row, fieldnames))
-
 
 def markdown_table(rows: list[dict[str, Any]], fieldnames: list[str], digits: int = 4) -> str:
     if not rows:
@@ -734,7 +660,6 @@ def markdown_table(rows: list[dict[str, Any]], fieldnames: list[str], digits: in
         values = [format_value(row.get(field), digits=digits).replace("|", "\\|") for field in headers]
         lines.append("| " + " | ".join(values) + " |")
     return "\n".join(lines) + "\n"
-
 
 def write_markdown_comparison(path: Path, rows: list[dict[str, Any]]) -> None:
     compact_fields = [
@@ -760,7 +685,6 @@ def write_markdown_comparison(path: Path, rows: list[dict[str, Any]]) -> None:
     )
     path.write_text(text, encoding="utf-8")
 
-
 def write_markdown_summary(path: Path, rows: list[dict[str, Any]]) -> None:
     text = (
         "# OOTB vs. fine-tuned family summary\n\n"
@@ -769,7 +693,6 @@ def write_markdown_summary(path: Path, rows: list[dict[str, Any]]) -> None:
         + markdown_table(rows, FAMILY_SUMMARY_FIELDNAMES, digits=4)
     )
     path.write_text(text, encoding="utf-8")
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Create OOTB vs fine-tuned comparison tables from metadata JSON files.")
@@ -821,7 +744,6 @@ def main() -> None:
         print("\nWarnings:")
         for warning in warnings:
             print(f"  - {warning}")
-
 
 if __name__ == "__main__":
     main()

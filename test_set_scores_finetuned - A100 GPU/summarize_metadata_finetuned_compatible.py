@@ -98,27 +98,15 @@ def _first_present(mapping: dict, keys: list[str]):
             return mapping[key]
     return None
 
-
 def normalize_metadata_schema(data: dict) -> dict:
     """
-    Convert supported run metadata variants into the common schema expected by
-    this summarizer.
-
-    Original OOTB metadata already contains fields such as model_name, scores,
-    input_path, and archive_prediction_path. Fine-tuning/final-eval metadata uses
-    base_model_name, final_prediction_metrics or participant_scores, eval_path,
-    and prediction_paths.archive_predictions instead. This helper fills the
-    standard fields without mutating the original dict.
+    Convert supported run metadata variants into the common schema expected by this summarizer.
     """
     normalized = dict(data)
 
-    # Fine-tuning metadata names the checkpoint source as base_model_name. For
-    # plotting/significance, this should be treated as the model name/rung.
     if not normalized.get("model_name") and normalized.get("base_model_name"):
         normalized["model_name"] = normalized.get("base_model_name")
 
-    # OOTB metadata stores participant-kit scores under scores. Fine-tuned
-    # internal/final evaluation metadata may store them elsewhere.
     scores = dict(normalized.get("scores") or {})
     participant_scores = normalized.get("participant_scores") or {}
     final_metrics = normalized.get("final_prediction_metrics") or {}
@@ -162,8 +150,6 @@ def normalize_metadata_schema(data: dict) -> dict:
         scores["rho_agnostic"] = rho
     normalized["scores"] = scores
 
-    # Fine-tuning metadata stores paths in a nested block. The significance
-    # functions need the evaluated reference path and archived predictions.
     prediction_paths = normalized.get("prediction_paths") or {}
     if not normalized.get("archive_prediction_path"):
         normalized["archive_prediction_path"] = _first_present(
@@ -172,18 +158,10 @@ def normalize_metadata_schema(data: dict) -> dict:
         )
 
     if not normalized.get("input_path"):
-        # For final test evaluation, eval_path is the reference file used for
-        # scoring. For internal train/eval split runs, do not point input_path at
-        # the full dev file because predictions cover only the held-out subset;
-        # paired significance should only run when predictions and references
-        # refer to the same item set.
         split_mode = normalized.get("split_mode")
         if split_mode == "separate_eval_path" or normalized.get("final_eval_only"):
             normalized["input_path"] = normalized.get("eval_path")
 
-    # Keep fine-tuned DeBERTa separate from OOTB DeBERTa, and also keep the
-    # controlled cross-encoder ladder separate from supplementary other-NLI
-    # checkpoints such as sileod and MoritzLaurer.
     model_type = (normalized.get("model_type", "") or "").lower()
     model_name_lower = (normalized.get("model_name", "") or "").lower()
 
@@ -196,7 +174,6 @@ def normalize_metadata_schema(data: dict) -> dict:
             normalized["comparison_bucket_override"] = "deberta_finetuned_other_nli"
 
     return normalized
-
 
 def load_metadata_files(metadata_dir: Path) -> list[dict]:
     rows = []
@@ -385,8 +362,7 @@ def bootstrap_delta_rho(pred_a: list[dict], pred_b: list[dict], ref_items: list[
 
 def compute_family_significance(rows: list[dict]) -> list[dict]:
     """
-    Compare each model against the previous model in the same comparison bucket,
-    but only when input_path and prompt_version match.
+    Compare each model against the previous model in the same comparison bucket, but only when input_path and prompt_version match.
     """
     bucket_groups: dict[str, list[dict]] = {}
     for row in rows:

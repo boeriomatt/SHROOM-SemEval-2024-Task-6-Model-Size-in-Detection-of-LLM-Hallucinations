@@ -8,8 +8,7 @@ import numpy as np
 METADATA_DIR = Path("outputs/metadata")
 PLOTS_DIR = Path("outputs/plots")
 
-# Plot styling defaults. These keep the figures readable in a thesis/report while
-# avoiding external style dependencies.
+# Plot styling defaults. These keep the figures readable in a thesis/report while avoiding external style dependencies.
 COMBINED_FIGSIZE = (9, 6)
 FAMILY_FIGSIZE = (8, 5)
 DPI = 300
@@ -18,23 +17,15 @@ LINE_WIDTH = 1.8
 ANNOTATION_FONT_SIZE = 8
 CAPTION_FONT_SIZE = 8
 
-# Set to False if you want combined plots to show only OOTB families when both
-# OOTB and fine-tuned metadata are present in outputs/metadata.
+# Set to False if you want combined plots to show only OOTB families when both OOTB and fine-tuned metadata are present in outputs/metadata.
 INCLUDE_FINETUNED_IN_COMBINED = True
 
-# Supports OOTB-only, fine-tuned-only, or mixed OOTB + fine-tuned metadata.
-
-# Buckets that should be shown as grouped scatter points, but without
-# a fitted regression line. This is useful for heterogeneous DeBERTa NLI
-# checkpoints that are not a clean architecture-controlled scaling ladder.
+# Buckets that should be shown as grouped scatter points, but without a fitted regression line.
 NO_REGRESSION_BUCKETS = {
     "deberta_other_nli",
     "deberta_lora_finetuned_other_nli",
 }
 
-# Hard-coded, colorblind-friendly colors for each model family / matched
-# OOTB-vs-fine-tuned comparison bucket. Fine-tuned buckets use the same
-# color as their corresponding OOTB bucket.
 BUCKET_COLORS: dict[str, str] = {
     "flan": "#1f77b4",
     "flan_lora_finetuned": "#1f77b4",
@@ -54,13 +45,11 @@ BUCKET_COLORS: dict[str, str] = {
 
 FALLBACK_BUCKET_COLOR = "#7f7f7f"
 
-
 def color_for_bucket(bucket: str) -> str:
     """Return the hard-coded plotting color for a comparison bucket."""
     return BUCKET_COLORS.get(bucket, FALLBACK_BUCKET_COLOR)
 
-# Manual defaults for common rung labels. The first map is used for single-family
-# plots; the second can override offsets for specific combined-size plots.
+# Manual defaults for common rung labels.
 FAMILY_LABEL_OFFSETS: dict[str, tuple[int, int]] = {
     "xsmall": (8, 8),
     "small": (8, -12),
@@ -80,12 +69,8 @@ FAMILY_LABEL_OFFSETS: dict[str, tuple[int, int]] = {
 }
 
 # Optional metric-specific label offsets for the combined size plots.
-# Keys are: (comparison_bucket, plotted_metric, point_label), where plotted_metric is
-# normalized to "accuracy" or "rho" even when the underlying row key is agnostic_acc
-# or agnostic_rho. This lets the same script work for OOTB rows, fine-tuned rows, or a mix.
 COMBINED_SIZE_LABEL_OFFSETS: dict[tuple[str, str, str], tuple[float, float]] = {
-    # FLAN / FLAN LoRA: keep the small point below, and separate mid-sized points
-    # from nearby DeBERTa/Qwen labels.
+    # FLAN / FLAN LoRA: keep the small point below, and separate mid-sized points from nearby DeBERTa/Qwen labels.
     ("flan", "accuracy", "small"): (8, -14),
     ("flan", "accuracy", "base"): (8, 10),
     ("flan", "accuracy", "large"): (8, 12),
@@ -164,7 +149,6 @@ COMBINED_SIZE_LABEL_OFFSETS: dict[tuple[str, str, str], tuple[float, float]] = {
     ("gemma_lora_finetuned", "rho", "4b"): (8, 10),
 }
 
-
 def metric_key_for_label_offsets(y_key: str) -> str:
     """Map row metric keys to the compact names used in label-offset tables."""
     lowered = str(y_key).lower()
@@ -173,7 +157,6 @@ def metric_key_for_label_offsets(y_key: str) -> str:
     if "rho" in lowered:
         return "rho"
     return lowered
-
 
 def combined_size_label_offset(
     bucket: str,
@@ -185,14 +168,13 @@ def combined_size_label_offset(
     return COMBINED_SIZE_LABEL_OFFSETS.get((bucket, metric_key, point_label), default_offset)
 
 def _as_float(value: Any) -> float | None:
-    """Return value as float if possible, preserving None for missing values."""
+    # Return value as float if possible, preserving None for missing values.
     if value is None:
         return None
     try:
         return float(value)
     except (TypeError, ValueError):
         return None
-
 
 def _is_finetuned_deberta(model_type: str) -> bool:
     model_type_lower = (model_type or "").lower()
@@ -204,7 +186,6 @@ def _is_finetuned_deberta(model_type: str) -> bool:
         "deberta_lora_finetuned",
         "deberta_lora",
     }
-
 
 def _is_finetuned_flan_lora(model_type: str) -> bool:
     model_type_lower = (model_type or "").lower()
@@ -249,7 +230,6 @@ def extract_model_type_and_name(data: dict[str, Any]) -> tuple[str, str]:
     model_type = data.get("model_type", "") or ""
     model_name = data.get("model_name") or data.get("base_model_name") or ""
     return str(model_type), str(model_name)
-
 
 def extract_scores(data: dict[str, Any]) -> tuple[float | None, float | None]:
     """
@@ -298,9 +278,8 @@ def extract_scores(data: dict[str, Any]) -> tuple[float | None, float | None]:
 
     return _as_float(acc), _as_float(rho)
 
-
 def normalize_metadata_row(data: dict[str, Any], path: Path) -> dict[str, Any]:
-    """Convert OOTB or fine-tuned metadata JSON into one plotting row."""
+    # Convert OOTB or fine-tuned metadata JSON into one plotting row
     model_type, model_name = extract_model_type_and_name(data)
     acc, rho = extract_scores(data)
     cost = data.get("computational_cost", {}) or {}
@@ -317,7 +296,6 @@ def normalize_metadata_row(data: dict[str, Any], path: Path) -> dict[str, Any]:
         "mean_latency_seconds": _as_float(cost.get("mean_inference_latency_seconds_per_example")),
         "total_training_runtime_seconds": _as_float(cost.get("total_training_runtime_seconds")),
     }
-
 
 def infer_family(model_type: str, model_name: str) -> str:
     model_type = (model_type or "").lower()
@@ -349,13 +327,11 @@ def infer_family(model_type: str, model_name: str) -> str:
 
     return model_type if model_type else "unknown"
 
-
 def infer_comparison_bucket(model_type: str, model_name: str) -> str:
     model_type = (model_type or "").lower()
     model_name_lower = (model_name or "").lower()
 
-    # Fine-tuned DeBERTa gets its own adaptation-regime bucket so it is not
-    # silently mixed with OOTB DeBERTa in combined plots.
+    # Fine-tuned DeBERTa gets its own adaptation-regime bucket so it is not mixed with OOTB DeBERTa in combined plots.
     if _is_finetuned_deberta(model_type):
         if model_name_lower.startswith("cross-encoder/nli-deberta-v3-"):
             return "deberta_lora_finetuned_cross_encoder"
@@ -386,7 +362,6 @@ def infer_comparison_bucket(model_type: str, model_name: str) -> str:
 
     return model_type if model_type else "unknown"
 
-
 def bucket_title(bucket: str) -> str:
     mapping = {
         "flan": "FLAN OOTB",
@@ -402,7 +377,6 @@ def bucket_title(bucket: str) -> str:
     }
     return mapping.get(bucket, bucket.replace("_", " ").title())
 
-
 def load_metadata(metadata_dir: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
 
@@ -414,7 +388,6 @@ def load_metadata(metadata_dir: Path) -> list[dict[str, Any]]:
         rows.append(row)
 
     return rows
-
 
 def short_model_label(model_name: str) -> str:
     name = (model_name or "").lower()
@@ -448,7 +421,6 @@ def short_model_label(model_name: str) -> str:
 
     return model_name
 
-
 def _as_float_arrays(
     x_values: list[float],
     y_values: list[float],
@@ -458,7 +430,6 @@ def _as_float_arrays(
     valid = np.isfinite(x) & np.isfinite(y)
     return x[valid], y[valid]
 
-
 def _transform_x(x: np.ndarray, x_transform: str) -> np.ndarray | None:
     if x_transform == "log10":
         if np.any(x <= 0):
@@ -467,7 +438,6 @@ def _transform_x(x: np.ndarray, x_transform: str) -> np.ndarray | None:
     if x_transform == "identity":
         return x
     raise ValueError(f"Unsupported x_transform: {x_transform}")
-
 
 def _fit_linear_regression(
     x: np.ndarray,
@@ -506,12 +476,10 @@ def _fit_linear_regression(
         "n": int(len(x)),
     }
 
-
 def _format_r2(r_squared: float, n: int) -> str:
     if not np.isfinite(r_squared):
         return f"n={n}"
     return f"R²={r_squared:.2f}, n={n}"
-
 
 def add_scatter_and_regression(
     x_values: list[float],
@@ -522,12 +490,7 @@ def add_scatter_and_regression(
     draw_regression: bool = True,
     color: Any | None = None,
 ) -> dict[str, Any] | None:
-    """Plot a series and return metadata, including its matplotlib color.
-
-    Returning the series color lets point labels use the exact same color as the
-    corresponding family/adaptation line. This is bucket-based, so it works for
-    OOTB-only, fine-tuned-only, or mixed metadata inputs.
-    """
+    # Plot a series and return metadata, including its matplotlib color.
     if len(x_values) == 0:
         return None
 
@@ -561,7 +524,6 @@ def add_scatter_and_regression(
         "n": len(x),
     }
 
-
 def annotate_point(
     x: float,
     y: float,
@@ -583,7 +545,6 @@ def annotate_point(
         zorder=5,
     )
 
-
 def _set_annotation_alignment_from_offset(annotation) -> None:
     """Keep label alignment consistent when an offset is moved by collision handling."""
     x_offset, y_offset = annotation.get_position()
@@ -601,7 +562,6 @@ def _set_annotation_alignment_from_offset(annotation) -> None:
     else:
         annotation.set_va("center")
 
-
 def _move_annotation_by_pixels(
     annotation,
     dx_pixels: float,
@@ -609,7 +569,7 @@ def _move_annotation_by_pixels(
     max_abs_x_offset_points: float,
     max_abs_y_offset_points: float,
 ) -> None:
-    """Move a point-label annotation by display pixels while preserving point offsets."""
+    # Move a point-label annotation by display pixels while preserving point offsets.
     figure = annotation.figure
     points_per_pixel = 72.0 / figure.dpi
     x_offset, y_offset = annotation.get_position()
@@ -624,10 +584,8 @@ def _move_annotation_by_pixels(
     annotation.set_position((new_x, new_y))
     _set_annotation_alignment_from_offset(annotation)
 
-
 def _expanded_annotation_bbox(annotation, renderer, x_pad: float = 1.04, y_pad: float = 1.12):
     return annotation.get_window_extent(renderer=renderer).expanded(x_pad, y_pad)
-
 
 def _keep_annotations_inside_axes(
     annotations: list,
@@ -637,7 +595,7 @@ def _keep_annotations_inside_axes(
     max_abs_x_offset_points: float,
     max_abs_y_offset_points: float,
 ) -> None:
-    """Gently pull labels back into the axes area so edge labels do not get clipped."""
+    # Pull labels back into the axes area so edge labels do not get clipped.
     axes_bbox = ax.get_window_extent(renderer=renderer)
     for annotation in annotations:
         bbox = _expanded_annotation_bbox(annotation, renderer)
@@ -660,7 +618,6 @@ def _keep_annotations_inside_axes(
                 max_abs_y_offset_points=max_abs_y_offset_points,
             )
 
-
 def relax_annotations(
     annotations: list,
     ax=None,
@@ -670,14 +627,7 @@ def relax_annotations(
     max_abs_x_offset_points: float = 48.0,
     max_abs_y_offset_points: float = 44.0,
 ) -> None:
-    """Deterministically reduce point-label overlaps without external dependencies.
-
-    Earlier versions only nudged labels vertically. That helped some crowded regions,
-    but it was not enough for the mid-sized DeBERTa/FLAN/Qwen clusters where labels
-    can be close in both x and y. This version allows small horizontal and vertical
-    adjustments, caps how far labels can drift from their point, and keeps labels
-    inside the plotting area where possible.
-    """
+    # Deterministically reduce point-label overlaps without external dependencies.
     if len(annotations) < 2:
         return
 
@@ -709,9 +659,6 @@ def relax_annotations(
                 cx_j = (bbox_j.x0 + bbox_j.x1) / 2.0
                 cy_j = (bbox_j.y0 + bbox_j.y1) / 2.0
 
-                # Prefer vertical separation, but also allow horizontal movement for
-                # dense mid-plot clusters. If centers are identical, use annotation
-                # order for a deterministic fallback direction.
                 sx = 1.0 if cx_i >= cx_j else -1.0
                 sy = 1.0 if cy_i >= cy_j else -1.0
                 if abs(cx_i - cx_j) < 1e-6:
@@ -751,7 +698,6 @@ def relax_annotations(
         if not moved:
             break
 
-
 def add_caption(caption: str) -> None:
     plt.gcf().text(
         0.5,
@@ -762,7 +708,6 @@ def add_caption(caption: str) -> None:
         fontsize=CAPTION_FONT_SIZE,
     )
 
-
 def metric_title(y_label: str) -> str:
     if y_label.lower() == "accuracy":
         return "Accuracy"
@@ -771,7 +716,6 @@ def metric_title(y_label: str) -> str:
     if "latency" in y_label.lower():
         return "Mean inference latency"
     return y_label
-
 
 def make_family_plot(
     rows: list[dict[str, Any]],
@@ -832,7 +776,6 @@ def make_family_plot(
     plt.savefig(PLOTS_DIR / output_name, dpi=DPI, bbox_inches="tight")
     plt.close()
 
-
 def get_bucket_specs(include_finetuned: bool = INCLUDE_FINETUNED_IN_COMBINED) -> list[tuple[str, str, tuple[int, int]]]:
     bucket_specs = [
         ("flan", "FLAN OOTB", (6, 6)),
@@ -851,18 +794,16 @@ def get_bucket_specs(include_finetuned: bool = INCLUDE_FINETUNED_IN_COMBINED) ->
         ])
     return bucket_specs
 
-
 def _short_metric_label(y_label: str) -> str:
-    """Compact metric label used in bar annotations."""
+    # Compact metric label used in bar annotations.
     if y_label.lower() == "accuracy":
         return "acc"
     if "rho" in y_label.lower():
         return "rho"
     return y_label.lower()
 
-
 def _wrap_family_tick(label: str) -> str:
-    """Wrap long family/adaptation names for grouped bar chart tick labels."""
+    # Wrap long family/adaptation names for grouped bar chart tick labels.
     replacements = {
         " LoRA fine-tuned": "\nLoRA fine-tuned",
         "DeBERTa other NLI": "DeBERTa other NLI",
@@ -873,9 +814,8 @@ def _wrap_family_tick(label: str) -> str:
         wrapped = wrapped.replace(old, new)
     return wrapped
 
-
 def _metric_annotation_lines(row: dict[str, Any]) -> list[str]:
-    """Return compact performance annotation lines available for a metadata row."""
+    # Return compact performance annotation lines available for a metadata row.
     metric_lines: list[str] = []
     acc_value = row.get("agnostic_acc")
     rho_value = row.get("agnostic_rho")
@@ -887,7 +827,6 @@ def _metric_annotation_lines(row: dict[str, Any]) -> list[str]:
 
     return metric_lines
 
-
 def make_combined_tradeoff_plot(
     rows: list[dict[str, Any]],
     y_key: str,
@@ -896,10 +835,6 @@ def make_combined_tradeoff_plot(
 ) -> None:
     """
     Backward-compatible wrapper for the older one-metric latency bar plots.
-
-    Prefer make_combined_latency_tradeoff_plot() for the thesis figures. This
-    wrapper is retained so older ad-hoc calls do not break, but main() now emits
-    one latency plot with both accuracy and rho annotated on each bar.
     """
     make_combined_latency_tradeoff_plot(
         rows=rows,
@@ -907,7 +842,6 @@ def make_combined_tradeoff_plot(
         title_suffix=f" ({metric_title(y_label)} rows)",
         require_metric_key=y_key,
     )
-
 
 def make_combined_latency_tradeoff_plot(
     rows: list[dict[str, Any]],
@@ -917,12 +851,6 @@ def make_combined_latency_tradeoff_plot(
 ) -> None:
     """
     Plot mean inference latency as grouped bars by family/adaptation condition.
-
-    This replaces the prior two latency trade-off plots. Mean latency remains on
-    the y-axis, model family/adaptation condition is on the x-axis, each size
-    rung is a separate bar, and both accuracy and Spearman rho are annotated on
-    each bar when available. Rows without latency are skipped automatically, so
-    the plot works for OOTB metadata, fine-tuned metadata, or mixed directories.
     """
     valid_rows: list[dict[str, Any]] = []
     for row in rows:
@@ -944,8 +872,6 @@ def make_combined_latency_tradeoff_plot(
     if not grouped_rows:
         return
 
-    # Wider than scatter plots because grouped bars need room for family and
-    # size-rung labels. Height is increased to avoid clipping vertical annotations.
     fig_width = max(COMBINED_FIGSIZE[0], 1.85 * len(grouped_rows) + 2.0)
     fig, ax = plt.subplots(figsize=(fig_width, 6.6))
 
@@ -1002,7 +928,6 @@ def make_combined_latency_tradeoff_plot(
     ax.set_title(f"Mean inference latency by family and size rung{title_suffix}")
     ax.grid(axis="y", linestyle="--", alpha=0.25, zorder=0)
 
-    # Extra headroom is intentional because bar annotations are vertical.
     ax.set_ylim(0, max_latency * 1.48)
     ax.margins(x=0.03)
 
@@ -1016,19 +941,12 @@ def make_combined_latency_tradeoff_plot(
     plt.savefig(PLOTS_DIR / output_name, dpi=DPI, bbox_inches="tight")
     plt.close()
 
-
 def make_combined_training_time_tradeoff_plot(
     rows: list[dict[str, Any]],
     output_name: str = "tradeoff_training_time_by_family.png",
 ) -> None:
     """
     Plot fine-tuning training time as grouped bars by family/adaptation condition.
-
-    This mirrors the grouped-bar latency trade-off plots, but uses
-    computational_cost.total_training_runtime_seconds on the y-axis. OOTB rows
-    usually do not have this field and are therefore skipped automatically, so
-    the function works cleanly for fine-tuned-only metadata or mixed OOTB +
-    fine-tuned metadata directories.
     """
     valid_rows = [
         row for row in rows
@@ -1123,7 +1041,6 @@ def make_combined_training_time_tradeoff_plot(
     plt.savefig(PLOTS_DIR / output_name, dpi=DPI, bbox_inches="tight")
     plt.close()
 
-
 def make_combined_size_plot(
     rows: list[dict[str, Any]],
     y_key: str,
@@ -1193,7 +1110,6 @@ def make_combined_size_plot(
     plt.savefig(PLOTS_DIR / output_name, dpi=DPI, bbox_inches="tight")
     plt.close()
 
-
 def write_plot_captions() -> None:
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
     caption_path = PLOTS_DIR / "plot_captions.md"
@@ -1216,7 +1132,6 @@ def write_plot_captions() -> None:
         "adaptation conditions from their OOTB counterparts, even when they share the same base checkpoint family.\n",
         encoding="utf-8",
     )
-
 
 def make_all_family_plots(rows: list[dict[str, Any]]) -> None:
     family_plot_specs = [
@@ -1258,7 +1173,6 @@ def make_all_family_plots(rows: list[dict[str, Any]]) -> None:
             output_name=f"{prefix}_size_vs_latency.png",
         )
 
-
 def main() -> None:
     if not METADATA_DIR.exists():
         raise FileNotFoundError(f"Metadata directory not found: {METADATA_DIR}")
@@ -1269,7 +1183,6 @@ def main() -> None:
         print("No metadata files found.")
         return
 
-    # Helpful console sanity check: shows how many usable rows were loaded per bucket.
     counts_by_bucket: dict[str, int] = {}
     for row in rows:
         counts_by_bucket[row["comparison_bucket"]] = counts_by_bucket.get(row["comparison_bucket"], 0) + 1
@@ -1277,11 +1190,6 @@ def main() -> None:
     for bucket, count in sorted(counts_by_bucket.items()):
         print(f"  {bucket}: {count}")
 
-    #make_all_family_plots(rows)
-
-    # Combined trade-off plots
-    # Remove older two-panel latency outputs if they exist, so stale files do not
-    # get mistaken for the current thesis-ready latency figure.
     for stale_latency_plot in ("tradeoff_latency_vs_accuracy.png", "tradeoff_latency_vs_rho.png"):
         stale_path = PLOTS_DIR / stale_latency_plot
         if stale_path.exists():
@@ -1296,7 +1204,6 @@ def main() -> None:
         output_name="tradeoff_training_time_by_family.png",
     )
 
-    # Combined size plots
     make_combined_size_plot(
         rows=rows,
         y_key="agnostic_acc",
@@ -1313,7 +1220,6 @@ def main() -> None:
     write_plot_captions()
     print(f"Saved plots to: {PLOTS_DIR}")
     print(f"Saved suggested captions to: {PLOTS_DIR / 'plot_captions.md'}")
-
 
 if __name__ == "__main__":
     main()

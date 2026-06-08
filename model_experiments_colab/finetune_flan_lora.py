@@ -1,56 +1,7 @@
-# For colab_vscode_flan_lora_finetune_runner.ipynb
-
 """
+For colab_vscode_flan_lora_finetune_runner.ipynb
+
 Fine-tune FLAN-T5-style seq2seq hallucination judges on SHROOM with LoRA.
-
-Designed to live next to run_experiment.py / finetune_deberta.py in the
-model_experiments project root. It mirrors the DeBERTa fine-tuning flow where
-possible, while keeping the FLAN inference logic aligned with the OOTB
-FlanJudge: the model is prompted with the standardized support prompt and
-scored using the relative probability of the verbalizers "yes" and "no".
-
-Interpretation:
-    yes -> supported -> Not Hallucination
-    no  -> unsupported -> Hallucination
-
-Training objectives:
-    --label-mode soft
-        Binary BCEWithLogitsLoss using SHROOM p(Hallucination) as the target.
-        The model logit is log P(no | prompt) - log P(yes | prompt), so
-        sigmoid(logit) equals the normalized verbalizer probability assigned
-        to hallucination.
-
-    --label-mode hard
-        Cross-entropy over the two verbalizer scores using the majority hard
-        SHROOM label.
-
-Typical local smoke test:
-    python finetune_flan_lora.py \
-      --model-name google/flan-t5-small \
-      --train-limit 100 --eval-limit 50 --epochs 1 \
-      --train-batch-size 2 --eval-batch-size 4 \
-      --grad-accum-steps 2 --label-mode soft --fp16
-
-Typical dev-split run:
-    python finetune_flan_lora.py \
-      --model-name google/flan-t5-base \
-      --train-path data/SHROOM_dev-v2/val.model-agnostic.json \
-      --eval-split 0.2 \
-      --epochs 2 --learning-rate 1e-4 \
-      --train-batch-size 2 --eval-batch-size 4 \
-      --grad-accum-steps 2 --label-mode soft --fp16
-
-Final test-style run after hyperparameters are fixed:
-    python finetune_flan_lora.py \
-      --model-name google/flan-t5-base \
-      --train-path data/SHROOM_dev-v2/val.model-agnostic.json \
-      --eval-path data/SHROOM_test-labeled/test.model-agnostic.json \
-      --final-eval-only \
-      --epochs 2 --learning-rate 1e-4 \
-      --train-batch-size 2 --eval-batch-size 4 \
-      --grad-accum-steps 2 --label-mode soft --fp16 \
-      --run-participant-scorer --score-split test \
-      --reference-dir data/SHROOM_test-labeled
 """
 from __future__ import annotations
 
@@ -79,7 +30,7 @@ from transformers import (
 
 try:
     from peft import LoraConfig, PeftModel, TaskType, get_peft_model
-except ImportError as exc:  # pragma: no cover - user-facing dependency error
+except ImportError as exc:
     raise ImportError(
         "This script requires PEFT. Install it with: pip install peft"
     ) from exc
@@ -323,7 +274,6 @@ def aggregate_variant_logprob(
     stacked = torch.stack(logps, dim=0)  # [num_variants, batch]
     return torch.logsumexp(stacked, dim=0)
 
-
 def compute_loss_and_probs_from_verbalizers(
     model,
     model_inputs: dict[str, torch.Tensor],
@@ -403,7 +353,6 @@ def metric_value(metrics: EvalMetrics, best_metric: str) -> float:
         return float("inf") if metrics.loss is None else float(metrics.loss)
     value = getattr(metrics, best_metric)
     return float("-inf") if value is None else float(value)
-
 
 def is_better(metrics: EvalMetrics, best_metrics: EvalMetrics | None, best_metric: str) -> bool:
     if best_metrics is None:

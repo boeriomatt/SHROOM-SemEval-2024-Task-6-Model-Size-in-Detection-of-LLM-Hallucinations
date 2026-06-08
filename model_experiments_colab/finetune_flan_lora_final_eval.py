@@ -1,56 +1,7 @@
-# For colab_vscode_flan_lora_finetune_test_runner.ipynb
-
 """
+For colab_vscode_flan_lora_finetune_test_runner.ipynb
+
 Fine-tune FLAN-T5-style seq2seq hallucination judges on SHROOM with LoRA.
-
-Designed to live next to run_experiment.py / finetune_deberta.py in the
-model_experiments project root. It mirrors the DeBERTa fine-tuning flow where
-possible, while keeping the FLAN inference logic aligned with the OOTB
-FlanJudge: the model is prompted with the standardized support prompt and
-scored using the relative probability of the verbalizers "yes" and "no".
-
-Interpretation:
-    yes -> supported -> Not Hallucination
-    no  -> unsupported -> Hallucination
-
-Training objectives:
-    --label-mode soft
-        Binary BCEWithLogitsLoss using SHROOM p(Hallucination) as the target.
-        The model logit is log P(no | prompt) - log P(yes | prompt), so
-        sigmoid(logit) equals the normalized verbalizer probability assigned
-        to hallucination.
-
-    --label-mode hard
-        Cross-entropy over the two verbalizer scores using the majority hard
-        SHROOM label.
-
-Typical local smoke test:
-    python finetune_flan_lora.py \
-      --model-name google/flan-t5-small \
-      --train-limit 100 --eval-limit 50 --epochs 1 \
-      --train-batch-size 2 --eval-batch-size 4 \
-      --grad-accum-steps 2 --label-mode soft --fp16
-
-Typical dev-split run:
-    python finetune_flan_lora.py \
-      --model-name google/flan-t5-base \
-      --train-path data/SHROOM_dev-v2/val.model-agnostic.json \
-      --eval-split 0.2 \
-      --epochs 2 --learning-rate 1e-4 \
-      --train-batch-size 2 --eval-batch-size 4 \
-      --grad-accum-steps 2 --label-mode soft --fp16
-
-Final test-style run after hyperparameters are fixed:
-    python finetune_flan_lora.py \
-      --model-name google/flan-t5-base \
-      --train-path data/SHROOM_dev-v2/val.model-agnostic.json \
-      --eval-path data/SHROOM_test-labeled/test.model-agnostic.json \
-      --final-eval-only \
-      --epochs 2 --learning-rate 1e-4 \
-      --train-batch-size 2 --eval-batch-size 4 \
-      --grad-accum-steps 2 --label-mode soft --fp16 \
-      --run-participant-scorer --score-split test \
-      --reference-dir data/SHROOM_test-labeled
 """
 from __future__ import annotations
 
@@ -104,7 +55,6 @@ ID2LABEL = {0: "Not Hallucination", 1: "Hallucination"}
 YES_VARIANTS_DEFAULT = "yes,Yes"
 NO_VARIANTS_DEFAULT = "no,No"
 
-
 def safe_filename(text: str) -> str:
     return (
         text.replace("/", "__")
@@ -113,14 +63,12 @@ def safe_filename(text: str) -> str:
         .replace(" ", "_")
     )
 
-
 def set_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-
 
 def ensure_directories() -> None:
     for path in [
@@ -133,20 +81,17 @@ def ensure_directories() -> None:
     ]:
         path.mkdir(parents=True, exist_ok=True)
 
-
 def label_to_id(label: Any) -> int:
     label_str = str(label)
     if label_str not in LABEL2ID:
         raise ValueError(f"Unsupported label {label!r}; expected one of {list(LABEL2ID)}")
     return LABEL2ID[label_str]
 
-
 def get_gold_probability(example: dict[str, Any]) -> float:
     value = example.get("p_hallucination_gold")
     if value is None:
         return float(label_to_id(example["label"]))
     return float(value)
-
 
 def spearmanr_safe(y_true: list[float], y_pred: list[float]) -> float | None:
     if len(y_true) < 2:
@@ -182,7 +127,6 @@ def spearmanr_safe(y_true: list[float], y_pred: list[float]) -> float | None:
         if math.isnan(float(corr)):
             return None
         return float(corr)
-
 
 class ShroomPromptDataset(Dataset):
     def __init__(
@@ -222,7 +166,6 @@ class ShroomPromptDataset(Dataset):
         encoding["gold_probs"] = float(gold_prob)
         return encoding
 
-
 @dataclass
 class EvalMetrics:
     loss: float | None
@@ -230,14 +173,12 @@ class EvalMetrics:
     rho: float | None
     num_examples: int
 
-
 def load_examples(path: Path, limit: int | None = None) -> list[dict[str, Any]]:
     raw = load_json(path)
     examples = build_examples(raw)
     if limit is not None and limit > 0:
         examples = examples[:limit]
     return examples
-
 
 def split_examples(
     examples: list[dict[str, Any]],
@@ -258,7 +199,6 @@ def split_examples(
     eval_examples = [ex for i, ex in enumerate(examples) if i in eval_indices]
     return train_examples, eval_examples
 
-
 def build_dataloader(
     examples: list[dict[str, Any]],
     tokenizer,
@@ -276,10 +216,8 @@ def build_dataloader(
     collator = DataCollatorWithPadding(tokenizer=tokenizer)
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collator)
 
-
 def move_batch_to_device(batch: dict[str, torch.Tensor], device: torch.device) -> dict[str, torch.Tensor]:
     return {key: value.to(device) for key, value in batch.items()}
-
 
 def split_batch_for_model(batch: dict[str, torch.Tensor]) -> tuple[dict[str, torch.Tensor], torch.Tensor, torch.Tensor, torch.Tensor]:
     labels = batch.pop("labels")
@@ -287,13 +225,11 @@ def split_batch_for_model(batch: dict[str, torch.Tensor]) -> tuple[dict[str, tor
     gold_probs = batch.pop("gold_probs")
     return batch, labels, hard_labels, gold_probs
 
-
 def parse_variants(text: str) -> list[str]:
     variants = [part.strip() for part in text.split(",") if part.strip()]
     if not variants:
         raise ValueError("At least one verbalizer variant is required.")
     return variants
-
 
 def encode_target_variants(tokenizer, variants: list[str], device: torch.device) -> list[torch.Tensor]:
     encoded: list[torch.Tensor] = []
@@ -304,10 +240,8 @@ def encode_target_variants(tokenizer, variants: list[str], device: torch.device)
         encoded.append(ids[0])
     return encoded
 
-
 def repeat_target_ids(target_ids: torch.Tensor, batch_size: int) -> torch.Tensor:
     return target_ids.unsqueeze(0).repeat(batch_size, 1)
-
 
 def sequence_logprob_for_target(
     model,
@@ -321,7 +255,6 @@ def sequence_logprob_for_target(
     outputs = model(**model_inputs, labels=labels)
     log_probs = F.log_softmax(outputs.logits, dim=-1)
 
-    # Tokenizers may use pad tokens in longer target sequences. Ignore pads if present.
     pad_token_id = getattr(model.config, "pad_token_id", None)
     mask = torch.ones_like(labels, dtype=torch.bool)
     if pad_token_id is not None:
@@ -331,7 +264,6 @@ def sequence_logprob_for_target(
     gathered = gathered.masked_fill(~mask, 0.0)
     return gathered.sum(dim=-1)
 
-
 def aggregate_variant_logprob(
     model,
     model_inputs: dict[str, torch.Tensor],
@@ -340,7 +272,6 @@ def aggregate_variant_logprob(
     logps = [sequence_logprob_for_target(model, model_inputs, target_ids) for target_ids in target_variants]
     stacked = torch.stack(logps, dim=0)  # [num_variants, batch]
     return torch.logsumexp(stacked, dim=0)
-
 
 def compute_loss_and_probs_from_verbalizers(
     model,
@@ -353,7 +284,6 @@ def compute_loss_and_probs_from_verbalizers(
     logp_yes = aggregate_variant_logprob(model, model_inputs, yes_target_variants)
     logp_no = aggregate_variant_logprob(model, model_inputs, no_target_variants)
 
-    # Binary hallucination logit. sigmoid(logp_no - logp_yes) == normalized P(no).
     hall_logit = logp_no - logp_yes
     p_hall = torch.sigmoid(hall_logit)
 
@@ -364,7 +294,6 @@ def compute_loss_and_probs_from_verbalizers(
         loss = F.cross_entropy(class_scores, labels.long())
 
     return loss, p_hall
-
 
 @torch.no_grad()
 def evaluate_model(
@@ -417,7 +346,6 @@ def evaluate_model(
         num_examples=total_seen,
     )
 
-
 def metric_value(metrics: EvalMetrics, best_metric: str) -> float:
     if best_metric == "loss":
         return float("inf") if metrics.loss is None else float(metrics.loss)
@@ -433,7 +361,6 @@ def is_better(metrics: EvalMetrics, best_metrics: EvalMetrics | None, best_metri
     if best_metric == "loss":
         return current < previous
     return current > previous
-
 
 @torch.no_grad()
 def run_warmup_examples(
@@ -483,7 +410,6 @@ def run_warmup_examples(
             )
     print("Warmup complete.")
     return len(warmup_examples)
-
 
 @torch.no_grad()
 def predict_examples_timed(
@@ -557,7 +483,6 @@ def predict_examples_timed(
     total_runtime = total_end - total_start if latencies else None
     return predictions, mean_latency, total_runtime
 
-
 def compute_prediction_metrics(
     examples: list[dict[str, Any]],
     predictions: list[dict[str, Any]],
@@ -574,7 +499,6 @@ def compute_prediction_metrics(
     rho = spearmanr_safe(gold_probs, pred_probs)
     return {"accuracy": accuracy, "rho": rho}
 
-
 def parse_score_file(score_path: Path) -> dict[str, float | str]:
     scores: dict[str, float | str] = {}
     if score_path.exists():
@@ -587,7 +511,6 @@ def parse_score_file(score_path: Path) -> dict[str, float | str]:
             except ValueError:
                 scores[key.strip()] = value.strip()
     return scores
-
 
 def run_checker_and_scorer(
     prediction_dir: Path,
@@ -625,7 +548,6 @@ def run_checker_and_scorer(
 
     return parse_score_file(score_path)
 
-
 def count_trainable_parameters(model) -> tuple[int, int]:
     total = 0
     trainable = 0
@@ -636,14 +558,12 @@ def count_trainable_parameters(model) -> tuple[int, int]:
             trainable += n
     return total, trainable
 
-
 def build_base_model(model_name: str, device: torch.device, use_amp: bool):
     model_kwargs: dict[str, Any] = {}
     if device.type == "cuda" and use_amp:
         model_kwargs["torch_dtype"] = torch.float16
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name, **model_kwargs)
     return model
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fine-tune FLAN-T5 on SHROOM with LoRA verbalizer scoring.")
@@ -738,7 +658,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-variants", default=NO_VARIANTS_DEFAULT)
 
     return parser.parse_args()
-
 
 def main() -> None:
     args = parse_args()
@@ -969,7 +888,6 @@ def main() -> None:
 
             import gc
 
-            # Free training-only objects before test inference.
             try:
                 del optimizer
             except NameError:
@@ -1157,7 +1075,6 @@ def main() -> None:
     print(f"Saved metadata to: {run_metadata_path}")
     print(f"Saved metadata archive to: {metadata_path}")
     print("Done.")
-
 
 if __name__ == "__main__":
     main()

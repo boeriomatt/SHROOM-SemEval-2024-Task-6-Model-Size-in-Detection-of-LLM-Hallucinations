@@ -1,47 +1,4 @@
-#!/usr/bin/env python3
-"""
-Generate confusion-matrix statistics for SHROOM model prediction files.
-
-Default project layout, when run from the project root:
-
-    data/
-      SHROOM_test-labeled/
-        test.model-agnostic.json
-    outputs/
-      predictions/
-        archive/
-          test.model-agnostic__<model>.json
-      tables/                         # created by this script
-
-Outputs:
-    outputs/tables/confusion_matrix_stats_by_model_task.csv
-    outputs/tables/confusion_matrix_stats_by_model_task.md
-    outputs/tables/confusion_matrix_errors.csv
-
-The script computes confusion-matrix counts and classification metrics for:
-    - each prediction file / model
-    - overall
-    - each SHROOM task: DM, PG, MT
-
-Positive class:
-    Hallucination
-
-Run:
-    python summarize_confusion_matrices.py
-
-Optional:
-    python summarize_confusion_matrices.py \
-        --dataset-path data/SHROOM_test-labeled/test.model-agnostic.json \
-        --predictions-dir outputs/predictions/archive \
-        --prediction-glob "test.model-agnostic*.json" \
-        --output-dir outputs/tables
-
-If you want to ignore the predicted label field and recompute labels from
-p(Hallucination), use:
-
-    python summarize_confusion_matrices.py --use-prob-threshold --threshold 0.5
-"""
-
+# Generate confusion-matrix statistics for SHROOM model prediction files.
 from __future__ import annotations
 
 import argparse
@@ -138,7 +95,6 @@ MD_FIELDNAMES = [
     "predicted_hallucination_rate",
 ]
 
-
 def read_json_or_jsonl(path: Path) -> Any:
     """Read either a normal JSON file or JSONL file."""
     text = path.read_text(encoding="utf-8").strip()
@@ -158,16 +114,9 @@ def read_json_or_jsonl(path: Path) -> Any:
                 raise ValueError(f"Could not parse {path} as JSON or JSONL; bad line {line_no}") from exc
         return rows
 
-
 def unwrap_records(obj: Any) -> list[dict[str, Any]]:
     """
     Normalize common prediction/dataset wrappers to a list of dictionaries.
-
-    Supported:
-        [ {...}, {...} ]
-        { "predictions": [ {...}, ... ] }
-        { "data": [ {...}, ... ] }
-        { "examples": [ {...}, ... ] }
     """
     if isinstance(obj, list):
         return [x for x in obj if isinstance(x, dict)]
@@ -180,12 +129,10 @@ def unwrap_records(obj: Any) -> list[dict[str, Any]]:
 
     raise ValueError("Expected a JSON list or a dict containing a predictions/data/examples list.")
 
-
 def record_id(record: dict[str, Any]) -> str:
     if "id" not in record:
         raise ValueError(f"Record is missing required 'id' field: {record}")
     return str(record["id"])
-
 
 def load_records_by_id(path: Path) -> dict[str, dict[str, Any]]:
     records = unwrap_records(read_json_or_jsonl(path))
@@ -199,13 +146,9 @@ def load_records_by_id(path: Path) -> dict[str, dict[str, Any]]:
 
     return by_id
 
-
 def normalize_label_to_bool(label: Any) -> bool | None:
     """
     Return True for Hallucination, False for Not Hallucination, None if unknown.
-
-    The checks are intentionally conservative because "Not Hallucination" contains
-    the substring "Hallucination".
     """
     if label is None:
         return None
@@ -247,7 +190,6 @@ def normalize_label_to_bool(label: Any) -> bool | None:
 
     return None
 
-
 def as_float(value: Any) -> float | None:
     if value is None:
         return None
@@ -258,7 +200,6 @@ def as_float(value: Any) -> float | None:
     if not math.isfinite(result):
         return None
     return result
-
 
 def find_probability(record: dict[str, Any]) -> float | None:
     for key in (
@@ -273,7 +214,6 @@ def find_probability(record: dict[str, Any]) -> float | None:
             return as_float(record.get(key))
     return None
 
-
 def label_bool_from_record(
     record: dict[str, Any],
     *,
@@ -282,9 +222,6 @@ def label_bool_from_record(
 ) -> bool:
     """
     Convert a prediction/gold record to boolean class.
-
-    If use_prob_threshold=True, p(Hallucination) is preferred.
-    Otherwise, the label field is preferred and probability is used as fallback.
     """
     if use_prob_threshold:
         probability = find_probability(record)
@@ -301,16 +238,13 @@ def label_bool_from_record(
 
     raise ValueError(f"Could not infer label from record id={record.get('id')!r}: {record}")
 
-
 def label_name(value: bool) -> str:
     return POSITIVE_LABEL if value else NEGATIVE_LABEL
-
 
 def safe_div(numerator: float, denominator: float) -> float | None:
     if denominator == 0:
         return None
     return numerator / denominator
-
 
 def mean(values: Iterable[float | None]) -> float | None:
     numeric = [value for value in values if value is not None and math.isfinite(value)]
@@ -318,45 +252,24 @@ def mean(values: Iterable[float | None]) -> float | None:
         return None
     return sum(numeric) / len(numeric)
 
-
 def mcc_score(tp: int, fp: int, tn: int, fn: int) -> float | None:
     denominator = math.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
     if denominator == 0:
         return None
     return ((tp * tn) - (fp * fn)) / denominator
 
-
 def f1_from_counts(true_positive_for_class: int, predicted_positive_for_class_errors: int, missed_positive_for_class_errors: int) -> float | None:
     """
     Compute one-vs-rest F1 directly from counts.
-
-    This intentionally returns 0.0 when a class has gold support but receives
-    no predictions. That matches the usual sklearn-style zero_division=0
-    behavior and avoids inflating macro-F1 for degenerate all-one-class models.
-
-    For the Hallucination class:
-        true_positive_for_class = TP
-        predicted_positive_for_class_errors = FP
-        missed_positive_for_class_errors = FN
-
-    For the Not Hallucination class:
-        true_positive_for_class = TN
-        predicted_positive_for_class_errors = FN
-        missed_positive_for_class_errors = FP
     """
     denominator = (2 * true_positive_for_class) + predicted_positive_for_class_errors + missed_positive_for_class_errors
     if denominator == 0:
         return None
     return (2 * true_positive_for_class) / denominator
 
-
 def infer_model_key(prediction_path: Path, dataset_path: Path) -> str:
     """
     Strip the dataset stem from a prediction filename.
-
-    Example:
-        test.model-agnostic__cross-encoder__nli-deberta-v3-base.json
-        -> cross-encoder__nli-deberta-v3-base
     """
     stem = prediction_path.stem
     dataset_stem = dataset_path.stem
@@ -371,7 +284,6 @@ def infer_model_key(prediction_path: Path, dataset_path: Path) -> str:
 
     return stem
 
-
 def infer_family(text: str) -> str:
     low = text.lower()
     if "flan" in low or "t5" in low:
@@ -384,13 +296,11 @@ def infer_family(text: str) -> str:
         return "gemma"
     return "unknown"
 
-
 def infer_adaptation(text: str) -> str:
     low = text.lower()
     if any(marker in low for marker in ("finetuned", "fine-tuned", "fine_tuned", "lora", "adapter")):
         return "finetuned"
     return "ootb"
-
 
 def infer_size_rung(text: str) -> str:
     low = text.lower().replace("_", "-")
@@ -421,7 +331,6 @@ def infer_size_rung(text: str) -> str:
 
     return ""
 
-
 def sort_size_value(size_rung: str) -> float:
     text = (size_rung or "").lower()
     order = {
@@ -444,7 +353,6 @@ def sort_size_value(size_rung: str) -> float:
         return value * (1_000_000_000 if unit == "b" else 1_000_000)
 
     return float("inf")
-
 
 def calculate_stats_for_scope(
     *,
@@ -527,10 +435,6 @@ def calculate_stats_for_scope(
     recall_pos = safe_div(tp, tp + fn)
     precision_neg = safe_div(tn, tn + fn)
     recall_neg = safe_div(tn, tn + fp)
-    # Compute class-specific F1 from counts rather than from precision/recall.
-    # This keeps F1_hallucination = 0 when the model predicts no hallucinations
-    # but the gold data contains hallucinations. Using precision=None would
-    # otherwise cause macro_f1 to average over only the negative class.
     f1_pos = f1_from_counts(tp, fp, fn)
     f1_neg = f1_from_counts(tn, fn, fp)
     macro_f1 = mean([f1_pos, f1_neg])
@@ -578,7 +482,6 @@ def calculate_stats_for_scope(
 
     return row, errors
 
-
 def format_value(value: Any, digits: int = 4) -> str:
     if value is None:
         return ""
@@ -587,7 +490,6 @@ def format_value(value: Any, digits: int = 4) -> str:
             return ""
         return f"{value:.{digits}f}"
     return str(value)
-
 
 def cleaned_for_csv(row: dict[str, Any], fieldnames: list[str]) -> dict[str, Any]:
     cleaned: dict[str, Any] = {}
@@ -601,7 +503,6 @@ def cleaned_for_csv(row: dict[str, Any], fieldnames: list[str]) -> dict[str, Any
             cleaned[field] = value
     return cleaned
 
-
 def write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as f:
@@ -609,7 +510,6 @@ def write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> 
         writer.writeheader()
         for row in rows:
             writer.writerow(cleaned_for_csv(row, fieldnames))
-
 
 def markdown_table(rows: list[dict[str, Any]], fieldnames: list[str], digits: int = 4) -> str:
     if not rows:
@@ -624,7 +524,6 @@ def markdown_table(rows: list[dict[str, Any]], fieldnames: list[str], digits: in
         lines.append("| " + " | ".join(values) + " |")
     return "\n".join(lines) + "\n"
 
-
 def write_markdown_stats(path: Path, rows: list[dict[str, Any]]) -> None:
     text = (
         "# Confusion matrix statistics by model and task\n\n"
@@ -636,7 +535,6 @@ def write_markdown_stats(path: Path, rows: list[dict[str, Any]]) -> None:
         + markdown_table(rows, MD_FIELDNAMES, digits=4)
     )
     path.write_text(text, encoding="utf-8")
-
 
 def summarize_prediction_file(
     *,
@@ -688,15 +586,10 @@ def summarize_prediction_file(
             use_prob_threshold=use_prob_threshold,
         )
         stats_rows.append(row)
-        # Avoid double-counting errors in confusion_matrix_errors.csv.
-        # The overall scope contains the same item-level mistakes as the
-        # task-specific scopes, so keeping only DM/PG/MT errors gives one
-        # row per mistaken prediction while preserving the task label.
         if task != "overall":
             error_rows.extend(errors)
 
     return stats_rows, error_rows, warnings
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate confusion-matrix stats for SHROOM prediction files.")
@@ -739,8 +632,6 @@ def main() -> None:
         gold_ids_by_task[task].sort(key=lambda x: int(x) if str(x).isdigit() else str(x))
 
     prediction_paths = sorted(args.predictions_dir.glob(args.prediction_glob))
-    # Avoid accidentally treating the gold dataset as a prediction file if the
-    # user points predictions-dir at the dataset folder.
     prediction_paths = [path for path in prediction_paths if path.resolve() != args.dataset_path.resolve()]
 
     if not prediction_paths:
@@ -761,7 +652,7 @@ def main() -> None:
                 threshold=args.threshold,
                 use_prob_threshold=args.use_prob_threshold,
             )
-        except Exception as exc:  # noqa: BLE001 - continue processing other model files.
+        except Exception as exc:
             warnings.append(f"Skipping {prediction_path.name}: {exc}")
             continue
 
@@ -816,7 +707,6 @@ def main() -> None:
         print("\nWarnings:")
         for warning in warnings:
             print(f"  - {warning}")
-
 
 if __name__ == "__main__":
     main()

@@ -1,7 +1,5 @@
 def support_prompt(context: str, hyp: str) -> str:
-    """
-    Standardized yes/no support prompt for seq2seq and decoder-only judges.
-    """
+    # Standardized yes/no support prompt for seq2seq and decoder-only judges.
     return (
         f"Context: {context}\n"
         f"Sentence: {hyp}\n"

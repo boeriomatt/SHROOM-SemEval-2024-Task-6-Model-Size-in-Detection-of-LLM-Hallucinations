@@ -224,7 +224,6 @@ def get_model_parameter_count(judge) -> int | None:
     return None
 
 def compute_direct_metrics(predictions: list[dict[str, Any]], examples: list[dict[str, Any]]) -> dict[str, float]:
-    """Convenience sanity-check metrics when labels are available in the input file."""
     labels_available = all(ex.get("label") in {"Hallucination", "Not Hallucination"} for ex in examples)
     probs_available = all(ex.get("p_hallucination_gold") is not None for ex in examples)
     metrics: dict[str, float] = {}
@@ -310,7 +309,6 @@ def save_metadata(
 
     print(f"Saved metadata file to: {metadata_path}")
 
-
 def run_warmup(judge, model_type: str, warmup_path: Path, warmup_n: int) -> int:
     if warmup_n <= 0:
         print("\nWarmup disabled.")
@@ -363,7 +361,6 @@ def main() -> None:
     ensure_directories()
     submission_dir.mkdir(parents=True, exist_ok=True)
 
-    # Keep the scoring directory clean, because participant-kit score.py scores every JSON file in it.
     for old_json in submission_dir.glob("*.json"):
         old_json.unlink()
 
@@ -499,7 +496,6 @@ def main() -> None:
     )
 
     print("Done.")
-
 
 if __name__ == "__main__":
     main()

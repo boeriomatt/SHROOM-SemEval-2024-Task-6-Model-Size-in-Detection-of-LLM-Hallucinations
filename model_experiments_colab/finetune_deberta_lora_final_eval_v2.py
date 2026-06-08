@@ -1,71 +1,7 @@
-# For colab_vscode_deberta_lora_finetune_test_runner_v2.ipynb
-
 """
+For colab_vscode_deberta_lora_finetune_test_runner_v2.ipynb
+
 Final test-set fine-tune/evaluate DeBERTa-style cross-encoder hallucination judges on SHROOM with LoRA.
-
-Designed to live next to run_experiment.py / finetune_deberta.py in the
-model_experiments project root. This mirrors the existing DeBERTa local
-validation flow, while using PEFT LoRA adapters so that DeBERTa fine-tuning is
-more directly comparable to the FLAN/Gemma/Qwen LoRA runs.
-
-The model is trained as a sequence classifier over the SHROOM context/hypothesis
-pair and writes predictions in the participant-kit format:
-
-    [{"label": "Hallucination", "p(Hallucination)": 0.91}, ...]
-
-Training objectives:
-    --label-mode soft
-        Binary BCEWithLogitsLoss using SHROOM p(Hallucination) as the target.
-        The classifier has one output logit and sigmoid(logit) is interpreted as
-        p(Hallucination). Recommended for Spearman rho alignment.
-
-    --label-mode hard
-        Standard 2-class cross-entropy using the majority hard label.
-
-Default local validation candidate:
-    - DeBERTa attention LoRA targets: query_proj,key_proj,value_proj
-    - r=16, alpha=32, dropout=0.05
-    - classifier and pooler saved/trained as modules_to_save
-    - soft labels, learning_rate=2e-4, epochs=4
-    - train_batch_size=1, eval_batch_size=2, grad_accum_steps=4 for comparability
-    - fp32 by default
-
-Typical local smoke test:
-    python finetune_deberta_lora.py `
-      --model-name cross-encoder/nli-deberta-v3-xsmall `
-      --train-limit 50 --eval-limit 25 --epochs 1 `
-      --train-batch-size 4 --eval-batch-size 8 `
-      --label-mode soft
-
-Final test-style run after hyperparameters are fixed:
-    python finetune_deberta_lora_final_eval.py `
-      --model-name cross-encoder/nli-deberta-v3-base `
-      --train-path data/SHROOM_dev-v2/val.model-agnostic.json `
-      --eval-path data/SHROOM_test-labeled/test.model-agnostic.json `
-      --final-eval-only `
-      --epochs 4 --learning-rate 2e-4 `
-      --train-batch-size 1 --eval-batch-size 2 --grad-accum-steps 4 `
-      --label-mode soft `
-      --lora-r 16 --lora-alpha 32 --lora-dropout 0.05 `
-      --lora-target-modules query_proj,key_proj,value_proj `
-      --lora-modules-to-save classifier,pooler `
-      --write-current --run-participant-scorer `
-      --score-split test --reference-dir data/SHROOM_test-labeled
-
-This final-eval variant avoids selecting checkpoints on the test set. With
---final-eval-only, it trains for the fixed number of epochs, saves the final
-LoRA adapter, and evaluates once on the provided eval/test file.
-
-Typical dev-split run:
-    python finetune_deberta_lora.py `
-      --model-name cross-encoder/nli-deberta-v3-base `
-      --train-path data/SHROOM_dev-v2/val.model-agnostic.json `
-      --eval-split 0.2 `
-      --epochs 4 --learning-rate 2e-4 `
-      --train-batch-size 8 --eval-batch-size 16 `
-      --label-mode soft `
-      --lora-r 16 --lora-alpha 32 --lora-dropout 0.05 `
-      --lora-target-modules query_proj,key_proj,value_proj
 """
 from __future__ import annotations
 
@@ -91,7 +27,6 @@ from transformers import (
     DataCollatorWithPadding,
     get_linear_schedule_with_warmup,
 )
-
 try:
     from peft import LoraConfig, PeftModel, TaskType, get_peft_model
 except ImportError as exc:  # pragma: no cover - user-facing dependency error
@@ -115,7 +50,6 @@ REFERENCE_DIR = Path("data/SHROOM_dev-v2")
 LABEL2ID = {"Not Hallucination": 0, "Hallucination": 1}
 ID2LABEL = {0: "Not Hallucination", 1: "Hallucination"}
 
-
 def safe_filename(text: str) -> str:
     return (
         text.replace("/", "__")
@@ -124,14 +58,12 @@ def safe_filename(text: str) -> str:
         .replace(" ", "_")
     )
 
-
 def set_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-
 
 def ensure_directories() -> None:
     for path in [
@@ -144,20 +76,17 @@ def ensure_directories() -> None:
     ]:
         path.mkdir(parents=True, exist_ok=True)
 
-
 def label_to_id(label: Any) -> int:
     label_str = str(label)
     if label_str not in LABEL2ID:
         raise ValueError(f"Unsupported label {label!r}; expected one of {list(LABEL2ID)}")
     return LABEL2ID[label_str]
 
-
 def get_gold_probability(example: dict[str, Any]) -> float:
     value = example.get("p_hallucination_gold")
     if value is None:
         return float(label_to_id(example["label"]))
     return float(value)
-
 
 def spearmanr_safe(y_true: list[float], y_pred: list[float]) -> float | None:
     if len(y_true) < 2:
@@ -193,7 +122,6 @@ def spearmanr_safe(y_true: list[float], y_pred: list[float]) -> float | None:
         if math.isnan(float(corr)):
             return None
         return float(corr)
-
 
 class ShroomPairDataset(Dataset):
     def __init__(
@@ -233,14 +161,12 @@ class ShroomPairDataset(Dataset):
         encoding["gold_probs"] = float(gold_prob)
         return encoding
 
-
 @dataclass
 class EvalMetrics:
     loss: float | None
     accuracy: float | None
     rho: float | None
     num_examples: int
-
 
 def load_examples(path: Path, limit: int | None = None) -> list[dict[str, Any]]:
     raw = load_json(path)
@@ -249,19 +175,11 @@ def load_examples(path: Path, limit: int | None = None) -> list[dict[str, Any]]:
         examples = examples[:limit]
     return examples
 
-
 def load_reference_ids(path: Path, limit: int | None = None) -> list[Any]:
-    """Load raw SHROOM ids directly from a reference/eval JSON file.
-
-    This is intentionally independent of src.data.build_examples so final test
-    submissions keep the original participant-kit ids even if a shared data
-    helper drops or normalizes them.
-    """
     raw = load_json(path)
     if limit is not None and limit > 0:
         raw = raw[:limit]
     return [item.get("id") for item in raw]
-
 
 def attach_reference_ids(examples: list[dict[str, Any]], reference_ids: list[Any] | None) -> None:
     if reference_ids is None:
@@ -273,7 +191,6 @@ def attach_reference_ids(examples: list[dict[str, Any]], reference_ids: list[Any
     for ex, ref_id in zip(examples, reference_ids):
         if ex.get("id") is None and ref_id is not None:
             ex["id"] = ref_id
-
 
 def split_examples(
     examples: list[dict[str, Any]],
@@ -294,7 +211,6 @@ def split_examples(
     eval_examples = [ex for i, ex in enumerate(examples) if i in eval_indices]
     return train_examples, eval_examples
 
-
 def build_dataloader(
     examples: list[dict[str, Any]],
     tokenizer,
@@ -312,17 +228,14 @@ def build_dataloader(
     collator = DataCollatorWithPadding(tokenizer=tokenizer)
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collator)
 
-
 def move_batch_to_device(batch: dict[str, torch.Tensor], device: torch.device) -> dict[str, torch.Tensor]:
     return {key: value.to(device) for key, value in batch.items()}
-
 
 def split_batch_for_model(batch: dict[str, torch.Tensor]) -> tuple[dict[str, torch.Tensor], torch.Tensor, torch.Tensor, torch.Tensor]:
     labels = batch.pop("labels")
     hard_labels = batch.pop("hard_labels")
     gold_probs = batch.pop("gold_probs")
     return batch, labels, hard_labels, gold_probs
-
 
 def compute_loss_and_probs(outputs, labels: torch.Tensor, label_mode: str) -> tuple[torch.Tensor, torch.Tensor]:
     if label_mode == "soft":
@@ -333,7 +246,6 @@ def compute_loss_and_probs(outputs, labels: torch.Tensor, label_mode: str) -> tu
         loss = F.cross_entropy(outputs.logits, labels.long())
         probs = torch.softmax(outputs.logits, dim=-1)[:, LABEL2ID["Hallucination"]]
     return loss, probs
-
 
 @torch.no_grad()
 def evaluate_model(
@@ -379,13 +291,11 @@ def evaluate_model(
         num_examples=total_seen,
     )
 
-
 def metric_value(metrics: EvalMetrics, best_metric: str) -> float:
     if best_metric == "loss":
         return float("inf") if metrics.loss is None else float(metrics.loss)
     value = getattr(metrics, best_metric)
     return float("-inf") if value is None else float(value)
-
 
 def is_better(metrics: EvalMetrics, best_metrics: EvalMetrics | None, best_metric: str) -> bool:
     if best_metrics is None:
@@ -395,7 +305,6 @@ def is_better(metrics: EvalMetrics, best_metrics: EvalMetrics | None, best_metri
     if best_metric == "loss":
         return current < previous
     return current > previous
-
 
 @torch.no_grad()
 def run_warmup_examples(
@@ -436,7 +345,6 @@ def run_warmup_examples(
             _ = model(**inputs)
     print("Warmup complete.")
     return len(warmup_examples)
-
 
 @torch.no_grad()
 def predict_examples_timed(
@@ -488,10 +396,6 @@ def predict_examples_timed(
         latencies.append(latency)
 
         pred: dict[str, Any] = {"label": label, "p(Hallucination)": p_hall}
-        # The SHROOM participant kit requires `id` on test submissions, but not
-        # on validation submissions. Keep the id whenever it is present in the
-        # source example so test.model-agnostic.json passes check_output.py and
-        # score.py.
         if ex.get("id") is not None:
             pred["id"] = ex["id"]
         predictions.append(pred)
@@ -510,7 +414,6 @@ def predict_examples_timed(
     total_runtime = total_end - total_start if latencies else None
     return predictions, mean_latency, total_runtime
 
-
 def compute_prediction_metrics(
     examples: list[dict[str, Any]],
     predictions: list[dict[str, Any]],
@@ -527,17 +430,13 @@ def compute_prediction_metrics(
     rho = spearmanr_safe(gold_probs, pred_probs)
     return {"accuracy": accuracy, "rho": rho}
 
-
 def ensure_required_submission_ids(
     predictions: list[dict[str, Any]],
     examples: list[dict[str, Any]],
     score_split: str,
 ) -> None:
-    """Ensure final test submissions contain ids before writing/scoring.
-
-    Validation submissions do not require ids in the SHROOM participant kit, but
-    test submissions do. This also protects against older prediction code that
-    created only label/probability records.
+    """
+    Ensure final test submissions contain ids before writing/scoring.
     """
     if score_split == "val":
         return
@@ -562,7 +461,6 @@ def ensure_required_submission_ids(
             "Check that --eval-path points to the labeled SHROOM test file with ids."
         )
 
-
 def parse_score_file(score_path: Path) -> dict[str, float | str]:
     scores: dict[str, float | str] = {}
     if score_path.exists():
@@ -575,7 +473,6 @@ def parse_score_file(score_path: Path) -> dict[str, float | str]:
             except ValueError:
                 scores[key.strip()] = value.strip()
     return scores
-
 
 def run_checker_and_scorer(
     prediction_dir: Path,
@@ -613,9 +510,7 @@ def run_checker_and_scorer(
 
     return parse_score_file(score_path)
 
-
 def parse_variants(text: str | None) -> list[str]:
-    """Parse comma-separated CLI values while preserving order and removing duplicates."""
     if text is None:
         return []
     values: list[str] = []
@@ -627,7 +522,6 @@ def parse_variants(text: str | None) -> list[str]:
             seen.add(value)
     return values
 
-
 def count_trainable_parameters(model) -> tuple[int, int]:
     total = 0
     trainable = 0
@@ -637,7 +531,6 @@ def count_trainable_parameters(model) -> tuple[int, int]:
         if parameter.requires_grad:
             trainable += n
     return total, trainable
-
 
 def resolve_dtype(args: argparse.Namespace, device: torch.device) -> tuple[torch.dtype, bool, bool]:
     if device.type != "cuda":
@@ -649,7 +542,6 @@ def resolve_dtype(args: argparse.Namespace, device: torch.device) -> tuple[torch
     if args.fp16:
         return torch.float16, True, True
     return torch.float32, False, False
-
 
 def build_sequence_classifier(
     model_name: str,
@@ -669,9 +561,6 @@ def build_sequence_classifier(
         model_kwargs["id2label"] = ID2LABEL
         model_kwargs["label2id"] = LABEL2ID
 
-    # Be explicit about dtype for all modes. Some HF checkpoints are stored/configured
-    # as float16 and will otherwise load fp16 even when the CLI requested fp32.
-    # Training fp16 weights without AMP/GradScaler can immediately produce NaNs.
     if device.type == "cuda":
         model_kwargs["torch_dtype"] = amp_dtype
     else:
@@ -689,7 +578,6 @@ def build_sequence_classifier(
     if first_param is not None:
         print(f"Loaded model parameter dtype: {first_param.dtype}")
     return model
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Final test-set fine-tune/evaluate DeBERTa on SHROOM hallucination labels with LoRA.")
@@ -798,7 +686,6 @@ def parse_args() -> argparse.Namespace:
 
     return parser.parse_args()
 
-
 def main() -> None:
     args = parse_args()
     print(f"Running {SCRIPT_VERSION}")
@@ -835,9 +722,6 @@ def main() -> None:
     else:
         train_examples = all_train_examples
         eval_examples = load_examples(eval_path, limit=args.eval_limit)
-        # Directly re-attach raw ids from the eval/reference file for final test
-        # submissions. This avoids KeyError: 'id' in participant_kit/check_output.py
-        # if a shared build_examples helper omits ids.
         eval_reference_ids = load_reference_ids(eval_path, limit=args.eval_limit)
         attach_reference_ids(eval_examples, eval_reference_ids)
         split_mode = "separate_eval_path"
@@ -1032,9 +916,6 @@ def main() -> None:
 
             import gc
 
-            # Free training-only objects before final test inference. Keeping the
-            # in-memory PEFT model avoids reloading a second full DeBERTa base model,
-            # matching the memory-friendly final-eval pattern used for Qwen/Gemma.
             try:
                 del optimizer
             except NameError:
@@ -1248,7 +1129,6 @@ def main() -> None:
     print(f"Saved metadata to: {run_metadata_path}")
     print(f"Saved metadata archive to: {metadata_path}")
     print("Done.")
-
 
 if __name__ == "__main__":
     main()

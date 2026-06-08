@@ -1,69 +1,7 @@
-# For colab_vscode_gemma_lora_finetune_runner.ipynb
-
 """
+For colab_vscode_gemma_lora_finetune_runner.ipynb
+
 Fine-tune Gemma-style decoder-only hallucination judges on SHROOM with LoRA.
-
-Designed to live next to run_experiment.py / finetune_flan_lora.py in the
-model_experiments project root. It mirrors the FLAN LoRA fine-tuning flow where
-possible, while adapting the model/scoring logic to Gemma's causal-LM chat
-prompting.
-
-The model is prompted with the standardized support prompt and scored using the
-relative probability of the verbalizers "yes" and "no" after the chat-template
-prompt.
-
-Interpretation:
-    yes -> supported -> Not Hallucination
-    no  -> unsupported -> Hallucination
-
-Training objectives:
-    --label-mode soft
-        Binary BCEWithLogitsLoss using SHROOM p(Hallucination) as the target.
-        The model logit is log P(no | prompt) - log P(yes | prompt), so
-        sigmoid(logit) equals the normalized verbalizer probability assigned
-        to hallucination.
-
-    --label-mode hard
-        Cross-entropy over the two verbalizer scores using the majority hard
-        SHROOM label.
-
-Typical local smoke test:
-    python finetune_gemma_lora.py \
-      --model-name google/gemma-3-1b-it \
-      --train-limit 50 --eval-limit 25 --epochs 1 \
-      --train-batch-size 1 --eval-batch-size 2 \
-      --grad-accum-steps 4 --label-mode soft --fp16
-
-Typical dev-split run:
-    python finetune_gemma_lora.py \
-      --model-name google/gemma-3-1b-it \
-      --train-path data/SHROOM_dev-v2/val.model-agnostic.json \
-      --eval-split 0.2 \
-      --epochs 2 --learning-rate 1e-4 \
-      --train-batch-size 1 --eval-batch-size 2 \
-      --grad-accum-steps 4 --label-mode soft --fp16 \
-      --gradient-checkpointing
-
-Memory-constrained 4-bit run:
-    python finetune_gemma_lora.py \
-      --model-name google/gemma-3-1b-it \
-      --eval-split 0.2 \
-      --epochs 2 --learning-rate 1e-4 \
-      --train-batch-size 1 --eval-batch-size 2 \
-      --grad-accum-steps 4 --label-mode soft --fp16 \
-      --use-4bit --gradient-checkpointing
-
-Final test-style run after hyperparameters are fixed:
-    python finetune_gemma_lora.py \
-      --model-name google/gemma-3-1b-it \
-      --train-path data/SHROOM_dev-v2/val.model-agnostic.json \
-      --eval-path data/SHROOM_test-labeled/test.model-agnostic.json \
-      --final-eval-only \
-      --epochs 2 --learning-rate 1e-4 \
-      --train-batch-size 1 --eval-batch-size 2 \
-      --grad-accum-steps 4 --label-mode soft --fp16 \
-      --run-participant-scorer --score-split test \
-      --reference-dir data/SHROOM_test-labeled
 """
 from __future__ import annotations
 
@@ -92,7 +30,7 @@ from transformers import (
 
 try:
     from transformers import BitsAndBytesConfig
-except Exception:  # pragma: no cover - optional dependency surface
+except Exception:
     BitsAndBytesConfig = None
 
 try:
@@ -103,7 +41,7 @@ try:
         get_peft_model,
         prepare_model_for_kbit_training,
     )
-except ImportError as exc:  # pragma: no cover - user-facing dependency error
+except ImportError as exc:
     raise ImportError(
         "This script requires PEFT. Install it with: pip install peft"
     ) from exc
@@ -128,7 +66,6 @@ ID2LABEL = {0: "Not Hallucination", 1: "Hallucination"}
 YES_VARIANTS_DEFAULT = "yes,Yes"
 NO_VARIANTS_DEFAULT = "no,No"
 
-
 def safe_filename(text: str) -> str:
     return (
         text.replace("/", "__")
@@ -137,14 +74,12 @@ def safe_filename(text: str) -> str:
         .replace(" ", "_")
     )
 
-
 def set_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-
 
 def ensure_directories() -> None:
     for path in [
@@ -157,20 +92,17 @@ def ensure_directories() -> None:
     ]:
         path.mkdir(parents=True, exist_ok=True)
 
-
 def label_to_id(label: Any) -> int:
     label_str = str(label)
     if label_str not in LABEL2ID:
         raise ValueError(f"Unsupported label {label!r}; expected one of {list(LABEL2ID)}")
     return LABEL2ID[label_str]
 
-
 def get_gold_probability(example: dict[str, Any]) -> float:
     value = example.get("p_hallucination_gold")
     if value is None:
         return float(label_to_id(example["label"]))
     return float(value)
-
 
 def spearmanr_safe(y_true: list[float], y_pred: list[float]) -> float | None:
     if len(y_true) < 2:
@@ -207,7 +139,6 @@ def spearmanr_safe(y_true: list[float], y_pred: list[float]) -> float | None:
             return None
         return float(corr)
 
-
 def build_chat_prompt(tokenizer, context: str, hyp: str, use_chat_template: bool) -> str:
     user_prompt = support_prompt(context, hyp)
     if not use_chat_template:
@@ -225,7 +156,6 @@ def build_chat_prompt(tokenizer, context: str, hyp: str, use_chat_template: bool
             "Could not apply the tokenizer chat template. "
             "Pass --no-chat-template only if you intentionally want raw support prompts."
         ) from exc
-
 
 class ShroomCausalPromptDataset(Dataset):
     def __init__(
@@ -275,7 +205,6 @@ class ShroomCausalPromptDataset(Dataset):
         encoding["gold_probs"] = float(gold_prob)
         return encoding
 
-
 @dataclass
 class EvalMetrics:
     loss: float | None
@@ -283,14 +212,12 @@ class EvalMetrics:
     rho: float | None
     num_examples: int
 
-
 def load_examples(path: Path, limit: int | None = None) -> list[dict[str, Any]]:
     raw = load_json(path)
     examples = build_examples(raw)
     if limit is not None and limit > 0:
         examples = examples[:limit]
     return examples
-
 
 def split_examples(
     examples: list[dict[str, Any]],
@@ -310,7 +237,6 @@ def split_examples(
     train_examples = [ex for i, ex in enumerate(examples) if i not in eval_indices]
     eval_examples = [ex for i, ex in enumerate(examples) if i in eval_indices]
     return train_examples, eval_examples
-
 
 def build_dataloader(
     examples: list[dict[str, Any]],
@@ -333,14 +259,11 @@ def build_dataloader(
     collator = DataCollatorWithPadding(tokenizer=tokenizer)
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collator)
 
-
 def model_device(model) -> torch.device:
     return next(model.parameters()).device
 
-
 def move_batch_to_device(batch: dict[str, torch.Tensor], device: torch.device) -> dict[str, torch.Tensor]:
     return {key: value.to(device) for key, value in batch.items()}
-
 
 def split_batch_for_model(batch: dict[str, torch.Tensor]) -> tuple[dict[str, torch.Tensor], torch.Tensor, torch.Tensor, torch.Tensor]:
     labels = batch.pop("labels")
@@ -348,16 +271,13 @@ def split_batch_for_model(batch: dict[str, torch.Tensor]) -> tuple[dict[str, tor
     gold_probs = batch.pop("gold_probs")
     return batch, labels, hard_labels, gold_probs
 
-
 def parse_variants(text: str) -> list[str]:
     variants = [part.strip() for part in text.split(",") if part.strip()]
     if not variants:
         raise ValueError("At least one verbalizer variant is required.")
     return variants
 
-
 def assert_finite_tensor(name: str, tensor: torch.Tensor) -> None:
-    """Fail fast instead of silently writing NaN predictions/checkpoints."""
     if not torch.isfinite(tensor).all():
         finite_mask = torch.isfinite(tensor)
         num_bad = int((~finite_mask).sum().detach().cpu().item())
@@ -367,7 +287,6 @@ def assert_finite_tensor(name: str, tensor: torch.Tensor) -> None:
             f"Sample values: {sample}. For Gemma, first retry with --bf16 or without --fp16."
         )
 
-
 def safe_metric_value(value: float | None, *, higher_is_better: bool) -> float:
     if value is None:
         return float("-inf") if higher_is_better else float("inf")
@@ -375,7 +294,6 @@ def safe_metric_value(value: float | None, *, higher_is_better: bool) -> float:
     if not math.isfinite(value):
         return float("-inf") if higher_is_better else float("inf")
     return value
-
 
 def encode_answer_variants(tokenizer, variants: list[str], device: torch.device) -> list[torch.Tensor]:
     encoded: list[torch.Tensor] = []
@@ -390,20 +308,13 @@ def encode_answer_variants(tokenizer, variants: list[str], device: torch.device)
         encoded.append(ids[0])
     return encoded
 
-
 def causal_sequence_logprob_for_target(
     model,
     model_inputs: dict[str, torch.Tensor],
     target_ids: torch.Tensor,
     pad_token_id: int,
 ) -> torch.Tensor:
-    """Return differentiable per-example log P(target | prompt) for a causal LM.
 
-    Prompts are already tokenized/truncated to leave room for answer tokens. This
-    function removes prompt padding, appends the target verbalizer tokens, pads the
-    resulting full sequences, and sums next-token log probabilities only over the
-    appended answer tokens.
-    """
     prompt_input_ids = model_inputs["input_ids"]
     prompt_attention_mask = model_inputs.get("attention_mask")
     if prompt_attention_mask is None:
@@ -455,9 +366,6 @@ def causal_sequence_logprob_for_target(
         use_cache=False,
     )
 
-    # Compute log-softmax in fp32 even when the model runs in fp16/bf16.
-    # This is especially important for Gemma fp16 runs, where verbalizer
-    # log-prob scoring can otherwise silently turn into NaN.
     logits = outputs.logits[:, :-1, :].float()
     assert_finite_tensor("causal_lm_logits", logits)
     next_token_ids = batch_input_ids[:, 1:]
@@ -468,7 +376,6 @@ def causal_sequence_logprob_for_target(
     answer_logprob = token_log_probs.sum(dim=-1)
     assert_finite_tensor("answer_logprob", answer_logprob)
     return answer_logprob
-
 
 def aggregate_variant_logprob(
     model,
@@ -487,7 +394,6 @@ def aggregate_variant_logprob(
     ]
     stacked = torch.stack(logps, dim=0)  # [num_variants, batch]
     return torch.logsumexp(stacked, dim=0)
-
 
 def compute_loss_and_probs_from_verbalizers(
     model,
@@ -517,7 +423,6 @@ def compute_loss_and_probs_from_verbalizers(
         loss = F.cross_entropy(class_scores, labels.long())
 
     return loss, p_hall
-
 
 @torch.no_grad()
 def evaluate_model(
@@ -573,13 +478,11 @@ def evaluate_model(
         num_examples=total_seen,
     )
 
-
 def metric_value(metrics: EvalMetrics, best_metric: str) -> float:
     if best_metric == "loss":
         return safe_metric_value(metrics.loss, higher_is_better=False)
     value = getattr(metrics, best_metric)
     return safe_metric_value(value, higher_is_better=True)
-
 
 def is_better(metrics: EvalMetrics, best_metrics: EvalMetrics | None, best_metric: str) -> bool:
     if best_metrics is None:
@@ -589,7 +492,6 @@ def is_better(metrics: EvalMetrics, best_metrics: EvalMetrics | None, best_metri
     if best_metric == "loss":
         return current < previous
     return current > previous
-
 
 @torch.no_grad()
 def run_warmup_examples(
@@ -651,7 +553,6 @@ def run_warmup_examples(
             )
     print("Warmup complete.")
     return len(warmup_examples)
-
 
 @torch.no_grad()
 def predict_examples_timed(
@@ -736,7 +637,6 @@ def predict_examples_timed(
     total_runtime = total_end - total_start if latencies else None
     return predictions, mean_latency, total_runtime
 
-
 def compute_prediction_metrics(
     examples: list[dict[str, Any]],
     predictions: list[dict[str, Any]],
@@ -753,7 +653,6 @@ def compute_prediction_metrics(
     rho = spearmanr_safe(gold_probs, pred_probs)
     return {"accuracy": accuracy, "rho": rho}
 
-
 def parse_score_file(score_path: Path) -> dict[str, float | str]:
     scores: dict[str, float | str] = {}
     if score_path.exists():
@@ -766,7 +665,6 @@ def parse_score_file(score_path: Path) -> dict[str, float | str]:
             except ValueError:
                 scores[key.strip()] = value.strip()
     return scores
-
 
 def run_checker_and_scorer(
     prediction_dir: Path,
@@ -804,7 +702,6 @@ def run_checker_and_scorer(
 
     return parse_score_file(score_path)
 
-
 def count_trainable_parameters(model) -> tuple[int, int]:
     total = 0
     trainable = 0
@@ -814,7 +711,6 @@ def count_trainable_parameters(model) -> tuple[int, int]:
         if parameter.requires_grad:
             trainable += n
     return total, trainable
-
 
 def resolve_dtype(args: argparse.Namespace, device: torch.device) -> tuple[torch.dtype, bool, bool]:
     if device.type != "cuda":
@@ -826,7 +722,6 @@ def resolve_dtype(args: argparse.Namespace, device: torch.device) -> tuple[torch
     if args.fp16:
         return torch.float16, True, True
     return torch.float32, False, False
-
 
 def build_base_model(
     model_name: str,
@@ -862,7 +757,6 @@ def build_base_model(
         model.to(device)
 
     return model
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fine-tune Gemma on SHROOM with LoRA verbalizer scoring.")
@@ -975,7 +869,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-variants", default=NO_VARIANTS_DEFAULT)
 
     return parser.parse_args()
-
 
 def main() -> None:
     args = parse_args()
@@ -1414,7 +1307,6 @@ def main() -> None:
     print(f"Saved metadata to: {run_metadata_path}")
     print(f"Saved metadata archive to: {metadata_path}")
     print("Done.")
-
 
 if __name__ == "__main__":
     main()

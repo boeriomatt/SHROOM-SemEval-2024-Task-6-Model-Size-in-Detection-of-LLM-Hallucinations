@@ -1,7 +1,3 @@
-# =========================
-# Project-specific
-# =========================
-
 # Archive (old):
 /archive (old)/
 
@@ -94,9 +90,7 @@ ENV/
 env.bak/
 venv.bak/
 
-# =========================
 # Python cache / compiled
-# =========================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -104,9 +98,8 @@ __pycache__/
 # C extensions
 *.so
 
-# =========================
+
 # Distribution / packaging
-# =========================
 .Python
 build/
 develop-eggs/
@@ -134,9 +127,7 @@ MANIFEST
 pip-log.txt
 pip-delete-this-directory.txt
 
-# =========================
 # Testing / coverage
-# =========================
 htmlcov/
 .tox/
 .nox/
@@ -151,9 +142,7 @@ coverage.xml
 .pytest_cache/
 cover/
 
-# =========================
 # Logs / local DBs
-# =========================
 *.log
 local_settings.py
 db.sqlite3
@@ -173,24 +162,18 @@ docs/_build/
 .pybuilder/
 target/
 
-# =========================
 # Jupyter / IPython
-# =========================
 .ipynb_checkpoints/
 profile_default/
 ipython_config.py
 
-# =========================
 # Environment / dependency managers
-# =========================
 .pdm-python
 .pdm-build/
 .pixi
 __pypackages__/
 
-# =========================
 # Caches / type checking / linting
-# =========================
 .mypy_cache/
 .dmypy.json
 dmypy.json
@@ -199,26 +182,20 @@ dmypy.json
 .ruff_cache/
 cython_debug/
 
-# =========================
 # IDE / editor
-# =========================
 .vscode/
 .idea/
 .spyderproject
 .spyproject
 .ropeproject
 
-# =========================
 # Secrets / env files
-# =========================
 .env
 .envrc
 .pypirc
 secrets.toml
 
-# =========================
 # OS / misc
-# =========================
 .DS_Store
 Thumbs.db
 

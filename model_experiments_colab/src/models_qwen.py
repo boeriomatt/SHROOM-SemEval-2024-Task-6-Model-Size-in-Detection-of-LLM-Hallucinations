@@ -13,13 +13,6 @@ class QwenJudge:
     Interpretation:
     - "yes"  -> supported -> Not Hallucination
     - "no"   -> unsupported -> Hallucination
-    Latency-optimized prompt-based hallucination judge for Qwen Instruct.
-    Main changes vs the original (non-optimized) version:
-    - optional 4-bit loading for large checkpoints
-    - single-token verbalizers by default: yes / no
-    - optional raw generation (disabled by default for full eval)
-    - optional preview generation for the first few examples only
-    - reserves a few tokens for the answer during scoring
     """
     def __init__(
         self,
